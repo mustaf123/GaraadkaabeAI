@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Enter phone number</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Sora:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#E9EDEA;font-family:'Manrope',system-ui,sans-serif;color:#10201B}
+a{color:#0B6B57}a:hover{color:#084F40}
+button,input{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; padding: 24px 24px 32px; display: flex; flex-direction: column; background: #F3F5F2; font-family: 'Manrope', system-ui, sans-serif; color: #10201B; overflow: hidden; position: relative;">
+<div style="display: flex; align-items: center; gap: 10px;">
+<svg width="40" height="40" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="24" fill="#0B6B57"></rect><path d="M64.97 37.03 A24 24 0 1 0 72 54 H50" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"></path><path d="M78 13 C79.2 20.5 81.5 22.8 89 24 C81.5 25.2 79.2 27.5 78 35 C76.8 27.5 74.5 25.2 67 24 C74.5 22.8 76.8 20.5 78 13 Z" fill="#F2B544"></path></svg>
+<div style="font-family: 'Sora', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: -0.02em; color: #10201B; white-space: nowrap;">GaraadKaabe<span style="color: #0B6B57;">AI</span></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px; margin-top: 20px;">
+<div style="display: flex; gap: 6px;"><div style="flex-grow: 1; height: 4px; border-radius: 4px; background: #0B6B57;"></div><div style="flex-grow: 1; height: 4px; border-radius: 4px; background: #E1E7E3;"></div><div style="flex-grow: 1; height: 4px; border-radius: 4px; background: #E1E7E3;"></div></div>
+<div style="font-size: 13px; font-weight: 600; color: #56665F;">Step 1 of 3</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 10px; margin-top: 28px;">
+<h1 style="margin: 0; font-family: 'Sora', sans-serif; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.02em; color: #10201B;">Enter your phone number</h1>
+<p style="margin: 0; font-size: 15px; line-height: 1.5; color: #56665F;">Your phone number is your wallet. People send money straight to it.</p>
+</div>
+<div style="margin-top: 28px; display: flex; flex-direction: column; gap: 8px;">
+<div style="display: flex; flex-direction: column; gap: 8px;">
+<label for="phone" style="font-size: 14px; font-weight: 600; color: #10201B;">Phone number</label>
+<div style="display: flex; align-items: center; height: 56px; border-radius: 16px; background: #FFFFFF; border: 2px solid #0B6B57; box-sizing: border-box; overflow: hidden;">
+<div style="padding: 0 14px; height: 100%; display: flex; align-items: center; font-weight: 700; font-size: 16px; color: #10201B; border-right: 1px solid #E1E7E3;">+252</div>
+<input id="phone" type="tel" inputmode="numeric" value="61 555 2046" placeholder="61 234 5678" style="flex-grow: 1; min-width: 0; height: 100%; border: none; outline: none; padding: 0 14px; font-size: 17px; font-weight: 600; letter-spacing: 0.04em; color: #10201B; background: transparent;">
+</div>
+</div>
+<div style="font-size: 13px; color: #56665F;">9 digits, for example 61 234 5678</div>
+</div>
+<div style="flex-grow: 1;"></div>
+<div style="display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; color: #56665F; margin-bottom: 16px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg><span>Your number is never shared with anyone.</span></div>
+<a href="CreatePin.dc.html" style="display: flex; align-items: center; justify-content: center; gap: 10px; height: 56px; border-radius: 16px; background: #0B6B57; color: #FFFFFF; font-size: 16px; font-weight: 700; text-decoration: none; border: none; width: 100%; box-sizing: border-box;">Continue</a>
+<p style="margin: 0; font-size: 15px; line-height: 1.5; color: #56665F; font-size: 13px; text-align: center; margin-top: 14px;">Already registered? You will be asked for your PIN.</p>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
