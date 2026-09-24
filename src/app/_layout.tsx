@@ -47,6 +47,10 @@ function RootStack() {
   return (
     <NavigationThemeProvider value={navigationTheme}>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+        {/* Declared screens come first and the first one is where the app starts,
+            so index must be listed before the gallery. */}
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(tabs)" />
         {/* The component gallery exists only in development builds. */}
         <Stack.Protected guard={__DEV__}>
           <Stack.Screen name="dev/gallery" />

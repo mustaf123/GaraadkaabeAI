@@ -106,7 +106,7 @@ The full list (disabled buttons, PIN boxes, segmented control, toggle, sheet, wa
 - **Tab bar** (Home · History · Alerts · Profile): same background as the page, no top border, active tab in `brandText`, unread badge on Alerts.
 - **Icons:** send = paper plane, receive = arrow into tray. Never use diagonal ↗/↙ arrows, which look like call-log icons.
 
-**Shared components** (build these before the screens): `PinBoxes`, `Keypad`, `Screen`, `PrimaryButton`, `SecondaryButton`, `IconButton`, `TextLink`, `StepProgress`, `Badge`, `BalanceCard`, `ActionCircle`, `TransactionRow`, `TabBar`, `BottomSheet`, `Toggle`, `SegmentedControl`, `LogoMark` (G + sparkle; `green` or `white` variant, size prop), `WalletNumberCard` (Home's "Your wallet number" card; Share opens the Receive sheet).
+**Shared components** (build these before the screens): `PinBoxes`, `Keypad`, `Screen`, `PrimaryButton`, `SecondaryButton`, `IconButton`, `TextLink`, `StepProgress`, `Badge`, `BalanceCard`, `ActionCircle`, `TransactionRow`, `TabBar`, `BottomSheet`, `Toggle`, `SegmentedControl`, `LogoMark` (G + sparkle; `green` or `white` variant, size prop), `WalletNumberCard` (Home's "Your wallet number" card; Share opens the Receive sheet), `ReceiveSheet` (Home-receive.png; copies the number with `expo-clipboard`).
 
 **Every screen is wrapped in `<Screen>`** (`src/components/Screen.tsx`): it applies the safe-area insets, so content starts below the status bar and above the navigation bar, and scrolled content never slides under the status bar. Use `edges={['top']}` on tab screens (the tab bar handles the bottom). Never add status-bar padding by hand.
 

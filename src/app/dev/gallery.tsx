@@ -10,7 +10,6 @@ import {
   Bell,
   ChevronLeft,
   Clock,
-  Download,
   Eye,
   EyeOff,
   FingerprintPattern,
@@ -28,6 +27,7 @@ import { Keypad } from '@/components/Keypad';
 import { LogoMark } from '@/components/LogoMark';
 import { PinBoxes } from '@/components/PinBoxes';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { ReceiveSheet } from '@/components/ReceiveSheet';
 import { Screen } from '@/components/Screen';
 import { SecondaryButton } from '@/components/SecondaryButton';
 import { SegmentedControl } from '@/components/SegmentedControl';
@@ -95,24 +95,10 @@ function Gallery() {
   const [notifications, setNotifications] = useState(false);
   const [tab, setTab] = useState('home');
   const [sheet, setSheet] = useState<'receive' | 'delete' | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const sheets = (
     <>
-      <BottomSheet visible={sheet === 'receive'} onClose={() => setSheet(null)} label="Receive money">
-        <View style={[styles.sheetIcon, { backgroundColor: colors.receive }]}>
-          <Download size={30} color={colors.onAction} strokeWidth={2} />
-        </View>
-        <Text style={[styles.t.sheetTitle, { color: colors.text }]}>Receive money</Text>
-        <Text style={[styles.t.body, styles.center, { color: colors.muted }]}>
-          Share your number. Anyone with GaraadKaabeAI can send money to it, and it arrives instantly.
-        </Text>
-        <View style={styles.numberBox}>
-          <Text style={styles.number}>+252 61 555 2046</Text>
-        </View>
-        <PrimaryButton title={copied ? 'Copied' : 'Copy number'} onPress={() => setCopied(true)} />
-        <SecondaryButton title="Close" variant="plain" onPress={() => setSheet(null)} />
-      </BottomSheet>
+      <ReceiveSheet visible={sheet === 'receive'} onClose={() => setSheet(null)} phone="615552046" />
 
       <BottomSheet visible={sheet === 'delete'} onClose={() => setSheet(null)} label="Delete account">
         <Text style={[styles.t.sheetTitle, { color: colors.text }]}>Delete your account?</Text>
@@ -276,13 +262,7 @@ function Gallery() {
         </Section>
 
         <Section title="WalletNumberCard" compare="Home.png (Share opens the Receive sheet)">
-          <WalletNumberCard
-            phone="615552046"
-            onShare={() => {
-              setCopied(false);
-              setSheet('receive');
-            }}
-          />
+          <WalletNumberCard phone="615552046" onShare={() => setSheet('receive')} />
         </Section>
 
         <Section title="TransactionRow (home)" compare="Home.png">
@@ -330,7 +310,7 @@ function Gallery() {
         </Section>
 
         <Section title="BottomSheet" compare="Home-receive.png, Profile-delete.png">
-          <SecondaryButton title="Open Receive sheet" onPress={() => { setCopied(false); setSheet('receive'); }} />
+          <SecondaryButton title="Open Receive sheet" onPress={() => setSheet('receive')} />
           <SecondaryButton title="Open Delete sheet" onPress={() => setSheet('delete')} />
         </Section>
 
@@ -368,7 +348,6 @@ const useStyles = createStyles(({ colors, radius, type }) => ({
     row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     transactionsHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     flex: { flex: 1 },
-    center: { textAlign: 'center' },
     swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     swatch: { width: 76, gap: 4 },
     swatchColor: { height: 36, borderRadius: 10, borderWidth: 1, borderColor: colors.line },
@@ -385,9 +364,6 @@ const useStyles = createStyles(({ colors, radius, type }) => ({
     settingLabel: { ...type.bodyStrong, color: colors.text, flex: 1 },
     logoBox: { width: 104, height: 104, borderRadius: radius.card, alignItems: 'center', justifyContent: 'center' },
     tabBarBox: { borderRadius: radius.card, overflow: 'hidden', borderWidth: 1, borderColor: colors.line },
-    sheetIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
-    numberBox: { alignSelf: 'stretch', padding: 18, borderRadius: radius.pin, backgroundColor: colors.surface },
-    number: { ...type.sheetTitle, fontSize: 24, letterSpacing: 0.96, color: colors.text, textAlign: 'center' },
     warn: { alignSelf: 'stretch', padding: 14, paddingHorizontal: 16, borderRadius: radius.button, backgroundColor: colors.warnSoft },
     warnText: { ...type.body, fontSize: 14, fontFamily: type.captionStrong.fontFamily, color: colors.warnText },
     warnStrong: { fontFamily: type.bodyStrong.fontFamily },
