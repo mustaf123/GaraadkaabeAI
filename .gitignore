@@ -45,3 +45,7 @@ example
 # generated native folders
 /ios
 /android
+
+# Deno writes a lock file here when run without the functions config; the real one
+# is supabase/functions/deno.lock
+/deno.lock

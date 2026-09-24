@@ -26,4 +26,9 @@ module.exports = defineConfig([
       ],
     },
   },
+  // Tests load fresh module copies with require() inside jest.isolateModules.
+  {
+    files: ["**/*.test.{ts,tsx}", "jest.setup.ts"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
 ]);

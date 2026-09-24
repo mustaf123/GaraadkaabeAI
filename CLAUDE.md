@@ -29,11 +29,13 @@ GaraadKaabeAI is a mobile wallet in the style of WAAFI / MyCash. It is a **portf
 | Device secret | `expo-crypto` (random 32-byte secret) |
 | Copy buttons | `expo-clipboard` (wallet number, recovery code) |
 | Privacy (NFR-07) | `expo-screen-capture` (block screenshots on PIN screens) |
+| Appearance | light + dark themes (`src/theme/theme.tsx`, `useTheme()`); the System / Light / Dark choice is saved with `expo-secure-store` (key `appearance`) |
+| App tests | `jest-expo` + `@testing-library/react-native` (`npm test`) |
 | Supabase CLI | `supabase` dev dependency, run as `npx supabase …` against the **hosted** dev project (no Docker) |
 
 Install each package with `npx expo install <package>` when the build step that needs it starts, not before.
 
-`design/SPEC.md` (version 2.4) uses this same stack. If any older document mentions Flutter, Laravel or MySQL, ignore that part. Where documents conflict, this file wins.
+`design/SPEC.md` (version 2.5) uses this same stack. If any older document mentions Flutter, Laravel or MySQL, ignore that part. Where documents conflict, this file wins.
 
 ## 3. Where the design lives
 
@@ -51,25 +53,33 @@ Colours, fonts and components are defined in Sections 4 and 5 below. There is no
 - The mockups are HTML, not React Native. Translate them; don't copy the HTML.
 - If a mockup and this file disagree, ask me.
 
-## 4. Design tokens (put these in `src/theme/tokens.ts`; never hard-code colours in screens)
+## 4. Design tokens (in `src/theme/tokens.ts`; never hard-code colours in screens or components)
 
-| Token | Value | Use |
-|---|---|---|
-| `brand` | `#0B6B57` | primary buttons, active tab, balance card |
-| `brandSoft` | `#E3F1EC` | icon backgrounds, success chips |
-| `bg` | `#F3F5F2` | every screen background, **including the tab bar** |
-| `surface` | `#FFFFFF` | cards, inputs, keypad keys |
-| `text` | `#10201B` | main text |
-| `muted` | `#56665F` | secondary text |
-| `line` | `#E1E7E3` | borders, dividers |
-| `accent` | `#F2B544` | logo sparkle, small highlights only (never text on white) |
-| `danger` / `dangerSoft` | `#B42318` / `#FCE8E6` | sent money, delete account |
-| `send` / `receive` / `history` / `security` | `#F07167` / `#2FBF8F` / `#6C8CF5` / `#F2A93B` | Home action circles |
+There are two palettes, **light** and **dark**, with the same token names (FR-38). Components and screens read colours **only** through `useTheme()` or `createStyles()`, never by importing a palette. A new colour goes into **both** palettes.
 
-- **Radius:** cards 20, buttons 16, PIN boxes 18, sheets 28 (top corners).
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `brand` | `#0B6B57` | `#0B6B57` | primary button fill |
+| `brandText` | `#0B6B57` | `#4FD1A5` | active tab, links, green icons and labels on the page |
+| `brandSoft` | `#E3F1EC` | `#1F2B26` | icon backgrounds, success chips |
+| `bg` | `#F3F5F2` | `#0E1512` | every screen background, **including the tab bar** |
+| `surface` | `#FFFFFF` | `#1A2420` | cards, inputs, keypad keys |
+| `text` | `#10201B` | `#F1F5F3` | main text |
+| `muted` | `#56665F` | `#9DB0A8` | secondary text |
+| `line` | `#E1E7E3` | `#26332D` | borders, dividers |
+| `accent` | `#F2B544` | `#F2B544` | logo sparkle, small highlights only (never text) |
+| `danger` / `dangerSoft` | `#B42318` / `#FCE8E6` | `#F4938B` / 16 % coral | sent money, delete account |
+| `cardBg` / `cardText` | `#0B6B57` / `#FFFFFF` | `#DDF1E9` / `#0E1F19` | balance card |
+| `badge` | `#D93036` | `#D93036` | unread count (the mockup's `#E5484D`, darkened so white text reaches 4.5:1) |
+| `send` / `receive` / `history` / `security` | `#F07167` / `#2FBF8F` / `#6C8CF5` / `#F2A93B` | same | Home action circles |
+
+The full list (disabled buttons, PIN boxes, segmented control, toggle, sheet, warning box, wallet-number card) is in `tokens.ts`. The dark palette is based on the Home mockup's dark theme. In the mockups, `accent` means the green that is `brandText` here.
+
+- **Radius:** cards 20, **balance card 24** (`cardLarge`), buttons 16, PIN boxes 18, sheets 28 (top corners).
 - **Touch targets:** at least 44 × 44.
-- **Font sizes:** screen title 28, balance 40, body 15, captions 13.
-- Money always uses **Sora**, is formatted `$1,234.50`, and is stored and computed as integers or `numeric`, **never floats**.
+- **Font sizes:** screen title 28, balance 40, body 15, captions 13. Text styles are in `src/theme/typography.ts`; each weight is its own font family, so never set `fontWeight`.
+- **Contrast (NFR-11):** `src/theme/tokens.test.ts` checks every text colour against its backgrounds in both themes (at least 4.5:1). When a component puts text on a new background, add that pair to the test.
+- Money always uses **Sora**, is formatted `$1,234.50` (`src/lib/format.ts`), and is stored and computed as integers or `numeric`, **never floats**.
 - Honour "reduce motion": skip animations when the OS setting is on.
 
 ## 5. Screens and routes
@@ -93,10 +103,16 @@ Colours, fonts and components are defined in Sections 4 and 5 below. There is no
 | 13 | Profile (tab, scrollable) | `src/app/(tabs)/profile.tsx` | `Profile` |
 | 14 | Alerts / Notifications (tab) | `src/app/(tabs)/alerts.tsx` | `Notifications` |
 
-- **Tab bar** (Home · History · Alerts · Profile): same background as the page, no top border, active tab in `brand`, unread badge on Alerts.
+- **Tab bar** (Home · History · Alerts · Profile): same background as the page, no top border, active tab in `brandText`, unread badge on Alerts.
 - **Icons:** send = paper plane, receive = arrow into tray. Never use diagonal ↗/↙ arrows, which look like call-log icons.
 
-**Shared components** (build these before the screens): `PinBoxes`, `Keypad`, `PrimaryButton`, `SecondaryButton`, `BalanceCard`, `ActionCircle`, `TransactionRow`, `TabBar`, `BottomSheet`, `Toggle`, `SegmentedControl`.
+**Shared components** (build these before the screens): `PinBoxes`, `Keypad`, `Screen`, `PrimaryButton`, `SecondaryButton`, `IconButton`, `TextLink`, `StepProgress`, `Badge`, `BalanceCard`, `ActionCircle`, `TransactionRow`, `TabBar`, `BottomSheet`, `Toggle`, `SegmentedControl`, `LogoMark` (G + sparkle; `green` or `white` variant, size prop), `WalletNumberCard` (Home's "Your wallet number" card; Share opens the Receive sheet).
+
+**Every screen is wrapped in `<Screen>`** (`src/components/Screen.tsx`): it applies the safe-area insets, so content starts below the status bar and above the navigation bar, and scrolled content never slides under the status bar. Use `edges={['top']}` on tab screens (the tab bar handles the bottom). Never add status-bar padding by hand.
+
+**Pressed states never fade cards, circles or rows** (no `opacity` on them): change a background instead, so their colours and labels always stay at full strength. Buttons may dim slightly while pressed.
+
+**Component gallery (development only):** `src/app/dev/gallery.tsx` shows every shared component in every state, with an Appearance switch and the screenshot to compare each one with. The root layout guards it with `Stack.Protected guard={__DEV__}`, so release builds cannot open it. Add every new shared component to it.
 
 ## 6. Product rules (decided; do not change without asking)
 
@@ -141,10 +157,11 @@ Colours, fonts and components are defined in Sections 4 and 5 below. There is no
 - Fingerprint on/off (turning it on needs the PIN)
 - Change PIN (needs the current PIN)
 - Notifications on/off
+- **Appearance** (FR-38): System / Light / Dark, a compact `SegmentedControl` in Preferences, where the mockup shows Language. The default, System, follows the phone and switches live. Saved **on the phone only** (SecureStore key `appearance`, never the database); Log out and account deletion do not clear it. The status bar follows the mode. The splash screen follows the phone's setting, because it shows before the app can read the choice (SPEC limitation 8).
 - Log out
 - **Delete this account**: allowed only when the balance is $0.00. Otherwise the button is disabled and the sheet explains why. Deleting keeps the row for audit but sets `phone` to NULL, so **the number can register again** as a new account.
 
-**English only.** The app has no language setting and no Somali text. The Profile mockup still shows a **Language** row: do **not** build it.
+**English only.** The app has no language setting and no Somali text. The Profile mockup still shows a **Language** row: do **not** build it; the Appearance row takes its place.
 
 ## 7. Supabase backend
 
@@ -209,7 +226,7 @@ Supabase's built-in phone login needs an SMS code, and its passwords need at lea
 - `auth-register`: validates the phone and PIN rules; hashes the PIN and recovery code; creates the Supabase auth user (internal email such as `<phone>@users.garaadkaabe.invalid` plus a random server-only password, never sent to the phone); then `rpc('auth_register_user')` creates the user, credentials, wallet and device **and pays the welcome bonus by calling `grant_welcome_bonus` inside the same transaction** (all or nothing; on failure the auth user is deleted again); returns a session and the recovery code. A registered number gets **E18**.
 - `auth-login`: checks lockout, device secret and PIN hash; handles the new-device flow; opens an `app_sessions` row with `auth_session_id` = the new token's `session_id` claim (without it every money function returns E11); returns a session.
 - `auth-biometric-login`: same, but verifies the biometric-protected device secret instead of the PIN.
-- `auth-enable-biometric` (needs the PIN), `auth-disable-biometric` (needs only a live session), `auth-reset-pin`, `auth-change-pin` (a wrong current PIN counts toward the lockout), `auth-logout`, `account-freeze`, `device-register-push`.
+- `auth-enable-biometric` (needs the PIN), `auth-disable-biometric` (needs only a live session), `auth-reset-pin`, `auth-change-pin` (a wrong current PIN counts toward the lockout; an E05 from it or from `auth-enable-biometric` also ends that session, keeping the push token), `auth-logout`, `account-freeze`, `device-register-push`.
 - `account-delete` (balance must be 0): sets `status = 'deleted'` and `phone = NULL`, deactivates devices, clears push tokens, revokes sessions, then **deletes the Supabase auth user** (`auth_user_id` becomes NULL). Removing the auth user frees its internal email, so the number can register again. The database refuses to remove the auth user of an account that is not deleted.
 - PIN and recovery hashes, fail counters and lock times are read and written in `user_credentials`, never `app_users`.
 
@@ -260,12 +277,15 @@ Supabase's built-in phone login needs an SMS code, and its passwords need at lea
   - delete is blocked when balance > 0
   - new-device alert goes to the OLD device's push token
   - Notifications off: no push is sent, but the in-app notification row is still created
-- App:
-  - `PinBoxes`/`Keypad` behaviour
+- App (`npm test`, jest-expo; tests live next to the code, never under `src/app/`):
+  - `PinBoxes`/`Keypad` behaviour ✔ step 4
+  - money and phone formatting ✔ step 4
+  - the theme follows the System setting live; Light and Dark override it; the choice is saved on the phone and read back at start-up (TC-41, TC-42) ✔ step 4
+  - text contrast in both themes (TC-43) ✔ step 4
   - idle-logout hook (60 s)
   - logout on background
 
-The full test-case list (TC-01 … TC-39) is in `design/SPEC.md`.
+The full test-case list (TC-01 … TC-43) is in `design/SPEC.md`.
 
 ### How database tests work (no Docker)
 
@@ -280,19 +300,20 @@ Rules for every test file:
 
 - App errors: `expect_app_error(label, actor, sql, 'E08')` checks the error message. `make_user(auth_id, phone)` builds a user with a live session and the welcome bonus.
 
-Numbers in use: DB-01..09 (schema), TC-18 + DB-10..11 (no client writes), TC-19 + DB-20..23 (RLS isolation), TC-10..16 + TC-24 + TC-40 + DB-30..35 (transfer_money; DB-35 = receiver re-check after locking), DB-40..44 (lookup, History, receipts), TC-36 (ledger invariants), DB-50..58 (auth helpers). Edge Function checks without a SPEC test case (`scripts/test-functions.mjs`): FN-01 check-phone, FN-02 register, FN-03 login, FN-04 freeze, FN-05 biometric, FN-06 reset PIN, FN-07 change PIN, FN-08 push token + logout.
+Numbers in use: DB-01..09 (schema), TC-18 + DB-10..11 (no client writes), TC-19 + DB-20..23 (RLS isolation), TC-10..16 + TC-24 + TC-40 + DB-30..35 (transfer_money; DB-35 = receiver re-check after locking), DB-40..44 (lookup, History, receipts), TC-36 (ledger invariants), DB-50..59 (auth helpers; DB-59 = a PIN lock ends the session). Edge Function checks without a SPEC test case (`scripts/test-functions.mjs`): FN-01 check-phone, FN-02 register, FN-03 login, FN-04 freeze, FN-05 biometric, FN-06 reset PIN, FN-07 change PIN, FN-08 push token + logout.
 
 ## 9. Project layout
 
 ```
-src/app/            expo-router screens (see Section 5)
-src/components/     shared UI components
-src/theme/          tokens.ts, typography.ts
+src/app/            expo-router screens (see Section 5); dev/gallery.tsx (development only)
+src/components/     shared UI components (+ their tests)
+src/theme/          tokens.ts (light + dark), typography.ts, theme.tsx (ThemeProvider, useTheme, createStyles)
 src/lib/            supabase.ts (client), api.ts (calls Edge Functions and RPC), format.ts
-src/stores/         session.ts (in-memory token, user, lock state)
+src/stores/         session.ts (in-memory token, user, lock state), appearance.ts (System / Light / Dark)
 src/hooks/          useIdleLogout.ts, useAppStateLogout.ts, useRealtimeWallet.ts
 supabase/           config.toml, migrations/, functions/, tests/, seed.sql (local-only, empty)
-scripts/            test-db.mjs (database test runner), later the TC-17 concurrency script
+scripts/            test-db.mjs, test-concurrency.mjs (TC-17), test-functions.mjs
+jest.setup.ts       app test setup (SecureStore stand-in, Reanimated test mode)
 design/             mockups and specs (read-only for you, unless I ask you to update SPEC.md)
 ```
 
@@ -310,10 +331,11 @@ npx supabase db advisors --linked       # Supabase security/performance checks
 npx supabase functions deploy <name>    # deploy an Edge Function (step 3)
 npm run test:functions                  # Edge Function tests against the deployed functions
 npx supabase secrets set PIN_PEPPER=... # one-time; keep a backup (changing it invalidates every PIN)
+npm test                                # app unit tests (jest-expo)
 npx tsc --noEmit && npm run lint        # type-check and lint before every commit
 ```
 
-The Supabase project is **hosted and dev-only**, and there is no Docker. `supabase start`, `db reset`, `functions serve` and `supabase test db` need Docker and are not used. `npm test` (app unit tests with `jest-expo`) will be added in build step 4.
+The Supabase project is **hosted and dev-only**, and there is no Docker. `supabase start`, `db reset`, `functions serve` and `supabase test db` need Docker and are not used.
 
 ## 11. How to work with me
 

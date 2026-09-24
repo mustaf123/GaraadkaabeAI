@@ -1,6 +1,6 @@
 # SPEC.md — GaraadKaabeAI: System Requirements and Design
 
-**Version:** 2.4 (24 Sep 2026). **Stack:** React Native + Expo, Supabase.
+**Version:** 2.5 (24 Sep 2026). **Stack:** React Native + Expo, Supabase.
 
 *2.1 changes:* secrets moved to a server-only `user_credentials` table; `recovery_locked_until` added; a deleted account's number can register again; the app has no access to `devices`, `app_sessions`, `audit_logs`.
 
@@ -9,6 +9,8 @@
 *2.3 changes:* the app is **English only**: Somali texts removed from §11, no language setting in Profile (FR-33), `app_users.language` dropped.
 
 *2.4 changes (auth design):* device and biometric secrets hashed with SHA-256, PIN and recovery code with bcrypt + a server-side pepper (NFR-02); the app sends the device secret, not its hash (§6.1); the PIN lock lives only in `user_credentials` and a successful login resets the lockout count (§6.2); `account-freeze` takes the phone + old device secret, within 7 days (§6.4); security alerts ignore the active-device and Notifications-off rules, and only the Log out button and deletion clear the push token (§6.4b); Forgot PIN clears the lock and unfreezes (§6.6); new errors E16–E18; `move_money` re-checks the receiver after locking; limitations 6 and 7.
+
+*2.5 changes:* light and dark themes with an **Appearance** setting (System / Light / Dark) in Profile → Preferences, saved on the phone (FR-38); text contrast in both themes (NFR-11); tests TC-41 to TC-43; limitation 8.
 
 This file holds the **rules**: what the app must do and how it must behave. The **look** of each screen is in `design/screens/` and `design/screenshots/`. For how to build it, see `CLAUDE.md`.
 
@@ -45,6 +47,7 @@ Somali mobile-money apps are widely used, but their users report slow responses,
 5. **The server's 60-second idle rule covers function calls only** (send, lookup, history, receipts). Plain reads of the user's own rows (balance, notifications) and Realtime are not checked by the server; the app's 60-second no-touch logout covers them.
 6. **Someone who knows your number can lock your login** by entering wrong PINs (30 min, then 24 h). Receiving money still works, and Forgot PIN clears the lock.
 7. **Anyone can check whether a number is registered** (`auth-check-phone`, and E06 when sending). Without OTP there is no way to hide this.
+8. **The splash screen follows the phone's dark-mode setting, not the Appearance setting.** It is shown by the phone before the app has started, so it cannot read the saved choice. The app switches to the chosen mode as soon as it opens.
 
 ---
 
@@ -122,6 +125,7 @@ Somali mobile-money apps are widely used, but their users report slow responses,
 | FR-35 | **Delete this account** opens a confirmation sheet. Deletion is allowed **only when the balance is $0.00**; otherwise the button is disabled with an explanation. |
 | FR-36 | Forgot PIN: phone + recovery code + new PIN twice. This issues a **new** recovery code, and the old one stops working. |
 | FR-37 | If a new fingerprint is added to the phone, fingerprint login switches off until the user logs in with the PIN and turns it on again. |
+| FR-38 | **Appearance**: System / Light / Dark, a segmented control in Profile → Preferences. The default, **System**, follows the phone's dark-mode setting and switches live when the phone changes. Light and Dark override it. The choice is saved **on the phone only** (never in the database), so it survives logout and restart and also applies to the screens before login. The status bar matches the mode. |
 
 ---
 
@@ -139,6 +143,7 @@ Somali mobile-money apps are widely used, but their users report slow responses,
 | NFR-08 | Privacy | Fingerprint data never leaves the phone. |
 | NFR-09 | Usability | English only; touch targets at least 44 px; honour the "reduce motion" setting. |
 | NFR-10 | Auditability | Every login, failed PIN, device change, transfer, freeze and deletion is logged. |
+| NFR-11 | Accessibility | Light and dark themes. Text contrast is at least 4.5:1 on every background it is used on, in both themes (WCAG 2.2 AA), and icons on their tiles at least 3:1. Disabled buttons are exempt. |
 
 ---
 
@@ -160,7 +165,7 @@ Somali mobile-money apps are widely used, but their users report slow responses,
 | 10 | Receipt | Animated tick, details card, Done / View history |
 | 11 | History (tab) | Segmented tabs, grouped list |
 | 12 | Forgot PIN | Phone, recovery code, new PIN ×2, Reset PIN |
-| 13 | Profile (tab) | Account card; Security, Preferences, About and Account sections; delete sheet |
+| 13 | Profile (tab) | Account card; Security, Preferences (Appearance, Notifications), About and Account sections; delete sheet |
 | 14 | Alerts (tab) | Unread count, Mark all read, segmented tabs, grouped cards |
 
 **Icons:** send = paper plane, receive = arrow into tray. Never diagonal arrows, which look like call-log icons.
@@ -422,6 +427,9 @@ E06 is also returned when someone tries to log in with a number that is not regi
 | TC-38 | FR-33 | Receiver turns Notifications OFF, then receives money | No push; the item still appears in Alerts |
 | TC-39 | FR-14 | Log in on phone B with the account from phone A | "This wasn't me" push arrives on phone A, not phone B |
 | TC-40 | NFR-06 | Retry with the same idempotency key but a different amount or receiver | E15; no money moves |
+| TC-41 | FR-38 | Appearance = System; switch the phone between light and dark while the app is open | The app follows the phone live, without a restart |
+| TC-42 | FR-38 | Choose Dark, log out, close the app and open it again | Still dark, including Login; Light overrides a dark phone the same way |
+| TC-43 | NFR-11 | Run the token contrast test (`npm test`) | Every text colour is at least 4.5:1 on its backgrounds, in both themes |
 
 ---
 
@@ -432,10 +440,10 @@ E06 is also returned when someone tries to log in with a number that is not regi
 | 1 | Supabase schema, RLS, System Treasury (migration) | Migrations pushed; `npm run test:db` passes (TC-18, TC-19) |
 | 2 | `transfer_money`, `lookup_receiver`, History/Receipt functions, DB tests, TC-17 concurrency script (Node, two connections) | TC-10 to TC-17, TC-24, TC-36 and TC-40 pass |
 | 3 | Auth Edge Functions (register, login, lockout, new device, reset, change PIN) | TC-03 to TC-09, TC-25, TC-26, TC-35 pass |
-| 4 | Expo setup: theme, fonts, shared components, onboarding, registration screens | Onboarding → Home works on a phone |
+| 4 | Expo setup: light + dark theme, fonts, shared components, onboarding, registration screens | Onboarding → Home works on a phone; TC-41 to TC-43 pass |
 | 5 | Login (PIN + fingerprint), Home, tab bar, auto-logout | TC-02, TC-20 to TC-23, TC-27 to TC-30 pass |
 | 6 | Send → Confirm → Sending → Receipt, History, Realtime | TC-14, TC-15 pass |
 | 7 | Alerts, Profile, delete account, push (tokens + send-push), animations | TC-32 to TC-34 and TC-37 to TC-39 pass |
-| 8 | Full test run, bug fixes, README (with limitations), demo video | All 40 test cases pass |
+| 8 | Full test run, bug fixes, README (with limitations), demo video | All 43 test cases pass |
 
 **Future work:** OTP verification, fees, agent cash-in/out, merchant QR payments, bill pay, admin dashboard, real payment integration through a licensed partner.
