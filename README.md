@@ -1,56 +1,50 @@
-# Welcome to your Expo app 👋
+# GaraadKaabeAI
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A mobile wallet in the style of WAAFI / MyCash: register with a phone number and a 4-digit PIN, then send and receive money by phone number. **Portfolio / course project — money is simulated.**
 
-## Get started
+- App: React Native + Expo (TypeScript), expo-router
+- Backend: Supabase (Postgres, Row Level Security, Edge Functions, Realtime)
+- Requirements and test cases: [design/SPEC.md](design/SPEC.md) · build guide: [CLAUDE.md](CLAUDE.md)
 
-1. Install dependencies
+## Status
 
-   ```bash
-   npm install
-   ```
+| Step | | |
+|---|---|---|
+| 1 | Database schema and Row Level Security | done |
+| 2 | `transfer_money`, receiver lookup, history, receipts | done |
+| 3 | Auth Edge Functions (register, login, lockout, new device, PIN reset) | next |
+| 4–6 | Theme, components, screens, fingerprint, Realtime, push | planned |
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Setup
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Create `.env` (git-ignored):
 
-### Other setup steps
+```bash
+EXPO_PUBLIC_SUPABASE_URL=...              # public, bundled into the app
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...  # public, bundled into the app
+SUPABASE_SECRET_KEY=...                   # server-only: used by the TC-17 test script, never by the app
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+The Supabase project is hosted; there is no local Docker setup.
 
-## Learn more
+```bash
+npx expo start                 # run the app
+npx supabase db push --linked  # apply database migrations
+npm run test:db                # database tests (TC-10..TC-19, TC-24, TC-36, TC-40, DB-xx)
+npm run test:concurrency       # TC-17: two sends at the same moment
+npm run lint && npx tsc --noEmit
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+`npx supabase db advisors --linked` shows 4 intentional warnings ("Signed-In Users Can Execute SECURITY DEFINER Function") for `transfer_money`, `lookup_receiver`, `my_transactions` and `get_receipt`: the app has no write access to the money tables, so these functions must run with the owner's rights, and each one checks the caller's live session first and acts only on the caller's behalf.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Known limitations
 
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+1. **Money is simulated.** A real wallet needs a Central Bank licence. Each new wallet gets a $100.00 demo balance.
+2. **No OTP**, so the app cannot prove that a user owns the phone number they register.
+3. **No PIN on send and no limits.** Anyone who unlocks a logged-in phone could send the whole balance within the 60-second window.
+4. **If a user loses both their PIN and recovery code,** the account cannot be recovered.
+5. **The server's 60-second idle rule covers function calls only.** Sending, receiver lookup, history and receipts are rejected after 60 s without a request. Plain reads of the user's own rows (balance, notifications) and Realtime updates are not checked by the server; the app's own 60-second no-touch logout covers them. Tying those reads to the session would break live updates after 60 s without a function call.

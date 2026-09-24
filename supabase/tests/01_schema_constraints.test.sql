@@ -19,7 +19,7 @@ begin
     execute 'set local role anon';
   else
     perform set_config('request.jwt.claims',
-      json_build_object('sub', p_actor, 'role', 'authenticated')::text, true);
+      json_build_object('sub', p_actor, 'role', 'authenticated', 'session_id', p_actor)::text, true);
     execute 'set local role authenticated';
   end if;
 end $$;
@@ -70,10 +70,10 @@ select '40000000-0000-4000-8000-000000000001', 'welcome_bonus', w.id,
        '20000000-0000-4000-8000-00000000000a', 100.00, '50000000-0000-4000-8000-000000000001'
 from public.wallets w where w.type = 'system';
 
-insert into public.ledger_entries (transaction_id, wallet_id, amount)
-select '40000000-0000-4000-8000-000000000001'::uuid, w.id, -100.00 from public.wallets w where w.type = 'system'
+insert into public.ledger_entries (transaction_id, wallet_id, amount, balance_after)
+select '40000000-0000-4000-8000-000000000001'::uuid, w.id, -100.00, w.balance - 100.00 from public.wallets w where w.type = 'system'
 union all
-select '40000000-0000-4000-8000-000000000001'::uuid, '20000000-0000-4000-8000-00000000000a'::uuid, 100.00;
+select '40000000-0000-4000-8000-000000000001'::uuid, '20000000-0000-4000-8000-00000000000a'::uuid, 100.00, 100.00;
 
 update public.wallets set balance = balance - 100.00 where type = 'system';
 

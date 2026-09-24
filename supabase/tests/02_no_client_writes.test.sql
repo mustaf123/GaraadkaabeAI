@@ -19,7 +19,7 @@ begin
     execute 'set local role anon';
   else
     perform set_config('request.jwt.claims',
-      json_build_object('sub', p_actor, 'role', 'authenticated')::text, true);
+      json_build_object('sub', p_actor, 'role', 'authenticated', 'session_id', p_actor)::text, true);
     execute 'set local role authenticated';
   end if;
 end $$;
@@ -81,18 +81,18 @@ select '40000000-0000-4000-8000-000000000001', 'welcome_bonus', w.id,
        '20000000-0000-4000-8000-00000000000a', 100.00, gen_random_uuid()
 from public.wallets w where w.type = 'system';
 
-insert into public.ledger_entries (transaction_id, wallet_id, amount)
-select '40000000-0000-4000-8000-000000000001'::uuid, w.id, -100.00 from public.wallets w where w.type = 'system'
+insert into public.ledger_entries (transaction_id, wallet_id, amount, balance_after)
+select '40000000-0000-4000-8000-000000000001'::uuid, w.id, -100.00, w.balance - 100.00 from public.wallets w where w.type = 'system'
 union all
-select '40000000-0000-4000-8000-000000000001'::uuid, '20000000-0000-4000-8000-00000000000a'::uuid, 100.00;
+select '40000000-0000-4000-8000-000000000001'::uuid, '20000000-0000-4000-8000-00000000000a'::uuid, 100.00, 100.00;
 
 update public.wallets set balance = balance - 100.00 where type = 'system';
 
 insert into public.notifications (user_id, kind, title, body) values
   ('10000000-0000-4000-8000-00000000000a', 'welcome', 'Welcome', 'You received $100.00');
 
-insert into public.app_sessions (user_id, device_id) values
-  ('10000000-0000-4000-8000-00000000000a', '30000000-0000-4000-8000-00000000000a');
+insert into public.app_sessions (user_id, device_id, auth_session_id) values
+  ('10000000-0000-4000-8000-00000000000a', '30000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-00000000000a');
 
 insert into public.audit_logs (user_id, action) values
   ('10000000-0000-4000-8000-00000000000a', 'test');
@@ -149,7 +149,7 @@ begin
   end loop;
 end $$;
 
--- DB-11: on their own rows, a user may change only language, notifications_on and read_at.
+-- DB-11: on their own rows, a user may change only notifications_on and read_at.
 do $$
 declare
   v_col text;
@@ -164,17 +164,18 @@ begin
       format('update public.notifications set %I = %I', v_col, v_col), '42501');
   end loop;
 
-  if pg_temp.exec_as(a, $q$update public.app_users set language = 'so', notifications_on = false$q$) <> 1 then
-    raise exception 'DB-11 failed: user could not update their own language / notifications_on';
+  if pg_temp.exec_as(a, $q$update public.app_users set notifications_on = false$q$) <> 1 then
+    raise exception 'DB-11 failed: user could not update their own notifications_on';
   end if;
   if pg_temp.exec_as(a, $q$update public.notifications set read_at = now()$q$) <> 1 then
     raise exception 'DB-11 failed: user could not mark their own notification read';
   end if;
 
-  perform pg_temp.expect_error('DB-11', a, $q$update public.app_users set language = 'fr'$q$, '23514');
+  -- English only: there is no language column any more (42703 = undefined column).
+  perform pg_temp.expect_error('DB-11', a, $q$update public.app_users set language = 'so'$q$, '42703');
 
   -- anon can't update anything
-  perform pg_temp.expect_error('DB-11', 'anon', $q$update public.app_users set language = 'so'$q$, '42501');
+  perform pg_temp.expect_error('DB-11', 'anon', $q$update public.app_users set notifications_on = false$q$, '42501');
   perform pg_temp.expect_error('DB-11', 'anon', $q$update public.notifications set read_at = now()$q$, '42501');
 end $$;
 

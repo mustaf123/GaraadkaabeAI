@@ -1,8 +1,12 @@
 # SPEC.md — GaraadKaabeAI: System Requirements and Design
 
-**Version:** 2.1 (23 Sep 2026). **Stack:** React Native + Expo, Supabase.
+**Version:** 2.3 (24 Sep 2026). **Stack:** React Native + Expo, Supabase.
 
 *2.1 changes:* secrets moved to a server-only `user_credentials` table; `recovery_locked_until` added; a deleted account's number can register again; the app has no access to `devices`, `app_sessions`, `audit_logs`.
+
+*2.2 changes:* new error E15 "Request conflict" and test TC-40; `transfer_money` takes the amount as text and checks it before any rounding; `lookup_receiver` returns only the masked number; History and Receipt functions added; notification texts; limitation 5.
+
+*2.3 changes:* the app is **English only**: Somali texts removed from §11, no language setting in Profile (FR-33), `app_users.language` dropped.
 
 This file holds the **rules**: what the app must do and how it must behave. The **look** of each screen is in `design/screens/` and `design/screenshots/`. For how to build it, see `CLAUDE.md`.
 
@@ -25,7 +29,7 @@ Somali mobile-money apps are widely used, but their users report slow responses,
 - Send money to a registered number; receive money automatically
 - Balance, history, receipts
 - In-app notifications and push notifications
-- Profile: fingerprint on/off, change PIN, language, notifications on/off, log out, delete account
+- Profile: fingerprint on/off, change PIN, notifications on/off, log out, delete account
 - Forgot PIN with a recovery code
 - Auto-logout after 60 s with no touch, and when the app leaves the screen
 
@@ -36,6 +40,7 @@ Somali mobile-money apps are widely used, but their users report slow responses,
 2. **No OTP**, so the app cannot prove that a user owns the phone number they register.
 3. **No PIN on send and no limits.** Anyone who unlocks a logged-in phone could send the whole balance within the 60-second window.
 4. **If a user loses both their PIN and recovery code,** the account cannot be recovered.
+5. **The server's 60-second idle rule covers function calls only** (send, lookup, history, receipts). Plain reads of the user's own rows (balance, notifications) and Realtime are not checked by the server; the app's 60-second no-touch logout covers them.
 
 ---
 
@@ -108,7 +113,7 @@ Somali mobile-money apps are widely used, but their users report slow responses,
 | FR-30 | Profile is scrollable. It shows the number, member-since date and status. |
 | FR-31 | Fingerprint login on/off. Turning it on requires the PIN. |
 | FR-32 | Change PIN: requires the current PIN; the same weak-PIN rules apply. |
-| FR-33 | Language: English / Soomaali. Notifications on/off. |
+| FR-33 | Notifications on/off. |
 | FR-34 | Log out. |
 | FR-35 | **Delete this account** opens a confirmation sheet. Deletion is allowed **only when the balance is $0.00**; otherwise the button is disabled with an explanation. |
 | FR-36 | Forgot PIN: phone + recovery code + new PIN twice. This issues a **new** recovery code, and the old one stops working. |
@@ -128,7 +133,7 @@ Somali mobile-money apps are widely used, but their users report slow responses,
 | NFR-06 | Reliability | A network drop or double tap never causes a double send (idempotency key). |
 | NFR-07 | Privacy | App content is hidden in the recent-apps preview, and screenshots are blocked on PIN screens. |
 | NFR-08 | Privacy | Fingerprint data never leaves the phone. |
-| NFR-09 | Usability | English and Somali; touch targets at least 44 px; honour the "reduce motion" setting. |
+| NFR-09 | Usability | English only; touch targets at least 44 px; honour the "reduce motion" setting. |
 | NFR-10 | Auditability | Every login, failed PIN, device change, transfer, freeze and deletion is logged. |
 
 ---
@@ -206,10 +211,10 @@ sequenceDiagram
     participant S as Supabase
     U->>A: Receiver number + amount
     A->>S: lookup_receiver(phone)
-    S-->>A: exists, active, masked number
+    S-->>A: masked number (or E01 / E06 / E07)
     U->>A: Tap Send on confirm screen
-    A->>S: rpc transfer_money(phone, amount, idempotency_key)
-    S->>S: check session, amount, receiver, idempotency
+    A->>S: rpc transfer_money(phone, amount as text, idempotency_key)
+    S->>S: check session, amount, idempotency (E15 if the same key differs), receiver
     S->>S: lock both wallets (lower id first), check balance
     S->>S: insert tx + 2 ledger lines, update balances, notify
     S-->>A: receipt
@@ -263,8 +268,9 @@ Profile → Delete this account → confirmation sheet. If the balance is greate
   - runs in one transaction
   - locks both wallets with `FOR UPDATE`, lower id first (avoids deadlocks)
   - checks the balance after locking
-  - uses a unique idempotency key: a repeated key returns the first receipt
-- **Money type:** `numeric(12,2)`, never float.
+  - checks the amount **as text before any rounding**: digits with at most 2 decimals, greater than 0 (E09)
+  - uses a unique idempotency key: a repeated key with the **same** request (sender, amount, receiver) returns the first receipt; with a **different** request it fails with E15. The key is checked again after locking, so a double tap can never pay twice.
+- **Money type:** `numeric(12,2)`, never float. Every ledger line also stores `balance_after`, the wallet balance right after it.
 
 ---
 
@@ -272,20 +278,20 @@ Profile → Delete this account → confirmation sheet. If the balance is greate
 
 | Table | Columns | Rules |
 |---|---|---|
-| `app_users` | id, auth_user_id, phone, status, language, notifications_on, created_at | phone UNIQUE, 9 digits, NULL only when deleted; auth_user_id NULL only when deleted; status ∈ active / locked / frozen / deleted; language ∈ en / so |
+| `app_users` | id, auth_user_id, phone, status, notifications_on, created_at | phone UNIQUE, 9 digits, NULL only when deleted; auth_user_id NULL only when deleted; status ∈ active / locked / frozen / deleted |
 | `user_credentials` | user_id, pin_hash, recovery_hash, failed_pin_count, lockout_count, locked_until, recovery_failed_count, recovery_locked_until, updated_at | **server-only**; one row per user |
 | `devices` | id, user_id, device_secret_hash, biometric_secret_hash, push_token, name, is_active, bound_at | **server-only**; one active device per user (partial unique index); push_token = Expo push token (the phone's delivery address) |
 | `wallets` | id, user_id, type, balance, currency | type ∈ user / system; `type='system' OR balance >= 0` |
-| `transactions` | id, reference, type, sender_wallet_id, receiver_wallet_id, amount, status, idempotency_key, created_at | reference UNIQUE; idempotency_key UNIQUE; amount > 0; sender ≠ receiver |
-| `ledger_entries` | id, transaction_id, wallet_id, amount, created_at | insert-only; index (wallet_id, created_at) |
+| `transactions` | id, reference, type, sender_wallet_id, receiver_wallet_id, amount, status, idempotency_key, created_at | reference UNIQUE; idempotency_key UNIQUE; amount > 0; sender ≠ receiver; one welcome bonus per wallet |
+| `ledger_entries` | id, transaction_id, wallet_id, amount, balance_after, seq, created_at | insert-only; index (wallet_id, created_at); seq = exact order of lines |
 | `notifications` | id, user_id, kind, title, body, read_at, created_at | kind ∈ sent / received / security / welcome |
-| `app_sessions` | id, user_id, device_id, last_seen, revoked | **server-only**; 60 s idle rule |
+| `app_sessions` | id, user_id, device_id, auth_session_id, last_seen, revoked | **server-only**; 60 s idle rule; auth_session_id = the login token's `session_id` |
 | `audit_logs` | id, user_id, device_id, action, details (jsonb), created_at | **server-only**; insert-only |
 
 **RLS summary**
 - **Read:** users read only their own rows in `app_users`, `wallets`, `transactions`, `ledger_entries` and `notifications`. A deleted account sees nothing.
 - **Server-only:** the app has no access to `user_credentials`, `devices`, `app_sessions` or `audit_logs`; only Edge Functions use them.
-- **Update:** users update only `notifications.read_at` and their own preferences (`language`, `notifications_on`), enforced per column.
+- **Update:** users update only `notifications.read_at` and their own `notifications_on` setting, enforced per column.
 - **No client inserts or deletes** anywhere, and no writes at all to `wallets`, `transactions` or `ledger_entries`.
 - `ledger_entries` and `audit_logs` reject UPDATE, DELETE and TRUNCATE for every role, including the server.
 
@@ -307,8 +313,11 @@ Profile → Delete this account → confirmation sheet. If the balance is greate
 | Edge Function | `account-delete` | — (balance must be 0) | ok |
 | Edge Function | `device-register-push` | push_token | ok |
 | Edge Function (internal) | `send-push` | user_id, title, body | sent / skipped (called by the server only) |
-| Postgres RPC | `lookup_receiver` | phone | exists, active, masked number |
-| Postgres RPC | `transfer_money` | receiver_phone, amount (string), idempotency_key | receipt |
+| Postgres RPC | `lookup_receiver` | phone | masked number (`61X XXX 2046`), or E01 / E06 / E07. A frozen account looks unregistered (E06). |
+| Postgres RPC | `transfer_money` | receiver_phone, amount (string), idempotency_key | receipt (`money_item`), or E01 / E05–E11 / E15 |
+| Postgres RPC | `my_transactions` | direction (all / sent / received), before_created_at, before_id, limit | History rows (`money_item`), newest first, other person's number masked |
+| Postgres RPC | `get_receipt` | transaction_id | `money_item`, or null if not the caller's |
+| Postgres RPC (server only) | `grant_welcome_bonus` | user_id | the $100.00 bonus (`money_item`); called by `auth-register`, only with `service_role` |
 | Table read (RLS) | wallets, transactions, ledger_entries, notifications | — | own rows |
 | Realtime | own `wallets` row, own `notifications` inserts | — | live updates |
 
@@ -329,24 +338,33 @@ Profile → Delete this account → confirmation sheet. If the balance is greate
 | Waiting period after registering, new device or PIN reset | **None** |
 | Delete account | Only at balance $0.00 |
 
-| Code | When | English / Somali |
+| Code | When | Message |
 |---|---|---|
-| E01 | Invalid number | Enter a valid 9-digit number / Geli lambar sax ah oo 9 god ah |
-| E02 | PINs don't match | PINs do not match. Try again / PIN-ku isma laha. Isku day mar kale |
-| E03 | Weak PIN | Choose a less obvious PIN / Dooro PIN aan fududayn |
-| E04 | Wrong PIN | Wrong PIN. 2 attempts left / PIN khaldan. 2 isku day ayaa kuu haray |
-| E05 | Account locked | Locked. Try again in 30 minutes / Waa la xiray. Isku day 30 daqiiqo kadib |
-| E06 | Receiver not found | This number is not registered / Lambarkan lama diiwaangelin |
-| E07 | Send to self | You cannot send to your own number / Lambarkaaga uma diri kartid |
-| E08 | Insufficient balance | Insufficient balance / Haraaga kuma filna |
-| E09 | Invalid amount | Enter a valid amount / Geli lacag sax ah |
-| E10 | Account frozen | This account is frozen / Koontadan waa la xayiray |
-| E11 | Session expired | Session ended. Enter your PIN / Fadhigii wuu dhammaaday. Geli PIN-kaaga |
-| E12 | Network error | No connection. Check History before retrying / Xiriir ma jiro. Hubi taariikhda ka hor |
-| E13 | Fingerprint failed 3× | Fingerprint not recognized. Use your PIN / Farta lama aqoonsan. Isticmaal PIN-kaaga |
-| E14 | Delete with balance | Send your balance out before deleting / Lacagta ka dir ka hor intaadan tirtirin |
+| E01 | Invalid number | Enter a valid 9-digit number |
+| E02 | PINs don't match | PINs do not match. Try again |
+| E03 | Weak PIN | Choose a less obvious PIN |
+| E04 | Wrong PIN | Wrong PIN. 2 attempts left |
+| E05 | Account locked | Locked. Try again in 30 minutes |
+| E06 | Receiver not found | This number is not registered |
+| E07 | Send to self | You cannot send to your own number |
+| E08 | Insufficient balance | Insufficient balance |
+| E09 | Invalid amount | Enter a valid amount |
+| E10 | Account frozen | This account is frozen |
+| E11 | Session expired | Session ended. Enter your PIN |
+| E12 | Network error | No connection. Check History before retrying |
+| E13 | Fingerprint failed 3× | Fingerprint not recognized. Use your PIN |
+| E14 | Delete with balance | Send your balance out before deleting |
+| E15 | Same request key reused with a different amount or receiver | Request conflict. Start the payment again |
 
-Have a native speaker review the Somali text before release.
+`money_item` (returned by the money functions): transaction_id, reference, created_at, type, direction (sent / received), amount, fee, counterparty_masked, balance_after, status.
+
+**Notification texts** (stored when the event happens; they match the Notifications mockup):
+
+| Kind | Text |
+|---|---|
+| sent | **Money sent** · You sent $10.00 to 61X XXX 4521. New balance $121.50. |
+| received | **Money received** · You received $25.00 from 61X XXX 7710. |
+| welcome | **Welcome to GaraadKaabeAI** · Your wallet is ready with a $100.00 demo balance. |
 
 ---
 
@@ -393,6 +411,7 @@ Have a native speaker review the Somali text before release.
 | TC-37 | FR-27 | Send money to a user whose Notifications is ON (real phone, app closed) | Push appears on the receiver's lock screen |
 | TC-38 | FR-33 | Receiver turns Notifications OFF, then receives money | No push; the item still appears in Alerts |
 | TC-39 | FR-14 | Log in on phone B with the account from phone A | "This wasn't me" push arrives on phone A, not phone B |
+| TC-40 | NFR-06 | Retry with the same idempotency key but a different amount or receiver | E15; no money moves |
 
 ---
 
@@ -401,12 +420,12 @@ Have a native speaker review the Somali text before release.
 | Week | Work | Done when |
 |---|---|---|
 | 1 | Supabase schema, RLS, System Treasury (migration) | Migrations pushed; `npm run test:db` passes (TC-18, TC-19) |
-| 2 | `transfer_money`, `lookup_receiver`, DB tests, TC-17 concurrency script (Node, two connections) | TC-12 to TC-17 and TC-36 pass |
+| 2 | `transfer_money`, `lookup_receiver`, History/Receipt functions, DB tests, TC-17 concurrency script (Node, two connections) | TC-10 to TC-17, TC-24, TC-36 and TC-40 pass |
 | 3 | Auth Edge Functions (register, login, lockout, new device, reset, change PIN) | TC-03 to TC-09, TC-25, TC-26, TC-35 pass |
 | 4 | Expo setup: theme, fonts, shared components, onboarding, registration screens | Onboarding → Home works on a phone |
 | 5 | Login (PIN + fingerprint), Home, tab bar, auto-logout | TC-02, TC-20 to TC-23, TC-27 to TC-30 pass |
 | 6 | Send → Confirm → Sending → Receipt, History, Realtime | TC-14, TC-15 pass |
-| 7 | Alerts, Profile, delete account, push (tokens + send-push), Somali text, animations | TC-32 to TC-34 and TC-37 to TC-39 pass |
-| 8 | Full test run, bug fixes, README (with limitations), demo video | All 39 test cases pass |
+| 7 | Alerts, Profile, delete account, push (tokens + send-push), animations | TC-32 to TC-34 and TC-37 to TC-39 pass |
+| 8 | Full test run, bug fixes, README (with limitations), demo video | All 40 test cases pass |
 
 **Future work:** OTP verification, fees, agent cash-in/out, merchant QR payments, bill pay, admin dashboard, real payment integration through a licensed partner.

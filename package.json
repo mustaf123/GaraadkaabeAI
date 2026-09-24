@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "dependencies": {
     "@expo/ui": "~57.0.19",
+    "@supabase/supabase-js": "^2.117.1",
     "expo": "~57.0.24",
     "expo-constants": "~57.0.19",
     "expo-device": "~57.0.2",
@@ -40,7 +41,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test:db": "node scripts/test-db.mjs"
+    "test:db": "node scripts/test-db.mjs",
+    "test:concurrency": "node --env-file=.env scripts/test-concurrency.mjs"
   },
   "private": true
 }

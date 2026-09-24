@@ -19,7 +19,7 @@ begin
     execute 'set local role anon';
   else
     perform set_config('request.jwt.claims',
-      json_build_object('sub', p_actor, 'role', 'authenticated')::text, true);
+      json_build_object('sub', p_actor, 'role', 'authenticated', 'session_id', p_actor)::text, true);
     execute 'set local role authenticated';
   end if;
 end $$;
@@ -114,13 +114,13 @@ union all
 select '40000000-0000-4000-8000-000000000003'::uuid, 'transfer', '20000000-0000-4000-8000-00000000000a'::uuid,
        '20000000-0000-4000-8000-00000000000b'::uuid, 10.00, gen_random_uuid();
 
-insert into public.ledger_entries (transaction_id, wallet_id, amount)
-select '40000000-0000-4000-8000-000000000001'::uuid, t.id, -100.00 from public.wallets t where t.type = 'system'
-union all select '40000000-0000-4000-8000-000000000001'::uuid, '20000000-0000-4000-8000-00000000000a'::uuid, 100.00
-union all select '40000000-0000-4000-8000-000000000002'::uuid, t.id, -100.00 from public.wallets t where t.type = 'system'
-union all select '40000000-0000-4000-8000-000000000002'::uuid, '20000000-0000-4000-8000-00000000000b'::uuid, 100.00
-union all select '40000000-0000-4000-8000-000000000003'::uuid, '20000000-0000-4000-8000-00000000000a'::uuid, -10.00
-union all select '40000000-0000-4000-8000-000000000003'::uuid, '20000000-0000-4000-8000-00000000000b'::uuid, 10.00;
+insert into public.ledger_entries (transaction_id, wallet_id, amount, balance_after)
+select '40000000-0000-4000-8000-000000000001'::uuid, t.id, -100.00, t.balance - 100.00 from public.wallets t where t.type = 'system'
+union all select '40000000-0000-4000-8000-000000000001'::uuid, '20000000-0000-4000-8000-00000000000a'::uuid, 100.00, 100.00
+union all select '40000000-0000-4000-8000-000000000002'::uuid, t.id, -100.00, t.balance - 200.00 from public.wallets t where t.type = 'system'
+union all select '40000000-0000-4000-8000-000000000002'::uuid, '20000000-0000-4000-8000-00000000000b'::uuid, 100.00, 100.00
+union all select '40000000-0000-4000-8000-000000000003'::uuid, '20000000-0000-4000-8000-00000000000a'::uuid, -10.00, 90.00
+union all select '40000000-0000-4000-8000-000000000003'::uuid, '20000000-0000-4000-8000-00000000000b'::uuid, 10.00, 110.00;
 
 update public.wallets set balance = balance - 200.00 where type = 'system';
 
@@ -130,9 +130,9 @@ insert into public.notifications (id, user_id, kind, title, body) values
   ('60000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-00000000000b', 'welcome', 'Welcome', '$100.00'),
   ('60000000-0000-4000-8000-0000000000b2', '10000000-0000-4000-8000-00000000000b', 'received', 'Received', '$10.00');
 
-insert into public.app_sessions (user_id, device_id) values
-  ('10000000-0000-4000-8000-00000000000a', '30000000-0000-4000-8000-00000000000a'),
-  ('10000000-0000-4000-8000-00000000000b', '30000000-0000-4000-8000-00000000000b');
+insert into public.app_sessions (user_id, device_id, auth_session_id) values
+  ('10000000-0000-4000-8000-00000000000a', '30000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-00000000000a'),
+  ('10000000-0000-4000-8000-00000000000b', '30000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-00000000000b');
 
 insert into public.audit_logs (user_id, action) values
   ('10000000-0000-4000-8000-00000000000a', 'test'),
@@ -207,9 +207,9 @@ begin
                           where id = '60000000-0000-4000-8000-0000000000b1'$q$) <> 0 then
     raise exception 'DB-22 failed: A marked B''s notification read';
   end if;
-  if pg_temp.exec_as(a, $q$update public.app_users set language = 'so'
+  if pg_temp.exec_as(a, $q$update public.app_users set notifications_on = false
                           where id = '10000000-0000-4000-8000-00000000000b'$q$) <> 0 then
-    raise exception 'DB-22 failed: A changed B''s language';
+    raise exception 'DB-22 failed: A changed B''s notifications setting';
   end if;
   if (select read_at from public.notifications where id = '60000000-0000-4000-8000-0000000000b1') is not null then
     raise exception 'DB-22 failed: B''s notification changed';

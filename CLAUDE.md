@@ -33,7 +33,7 @@ GaraadKaabeAI is a mobile wallet in the style of WAAFI / MyCash. It is a **portf
 
 Install each package with `npx expo install <package>` when the build step that needs it starts, not before.
 
-`design/SPEC.md` (version 2.1) uses this same stack. If any older document mentions Flutter, Laravel or MySQL, ignore that part. Where documents conflict, this file wins.
+`design/SPEC.md` (version 2.3) uses this same stack. If any older document mentions Flutter, Laravel or MySQL, ignore that part. Where documents conflict, this file wins.
 
 ## 3. Where the design lives
 
@@ -138,10 +138,11 @@ Colours, fonts and components are defined in Sections 4 and 5 below. There is no
 **Profile**
 - Fingerprint on/off (turning it on needs the PIN)
 - Change PIN (needs the current PIN)
-- Language: English / Soomaali
 - Notifications on/off
 - Log out
 - **Delete this account**: allowed only when the balance is $0.00. Otherwise the button is disabled and the sheet explains why. Deleting keeps the row for audit but sets `phone` to NULL, so **the number can register again** as a new account.
+
+**English only.** The app has no language setting and no Somali text. The Profile mockup still shows a **Language** row: do **not** build it.
 
 ## 7. Supabase backend
 
@@ -149,14 +150,14 @@ Colours, fonts and components are defined in Sections 4 and 5 below. There is no
 
 Migrations already pushed to the hosted project are **never edited**. Every change is a new file from `npx supabase migration new <name>`.
 
-- `app_users`: id, auth_user_id (→ `auth.users`, NULL only after deletion), phone UNIQUE (9 digits; **NULL only when deleted**), status (`active|locked|frozen|deleted`), language (`en|so`), notifications_on, created_at. **No secrets here**: the app can read this row.
+- `app_users`: id, auth_user_id (→ `auth.users`, NULL only after deletion), phone UNIQUE (9 digits; **NULL only when deleted**), status (`active|locked|frozen|deleted`), notifications_on, created_at. **No secrets here**: the app can read this row.
 - `user_credentials`: user_id (PK → app_users), pin_hash, recovery_hash, failed_pin_count, lockout_count, locked_until, recovery_failed_count, **recovery_locked_until** (the 24 h recovery lock), updated_at. **Server-only**: a 4-digit PIN hash can be cracked offline, which would skip the lockout, so the app must never read it.
 - `devices`: id, user_id, device_secret_hash, biometric_secret_hash (nullable), **push_token** (nullable, Expo push token), name, is_active, bound_at. At most **one active device per user** (partial unique index). **Server-only.**
 - `wallets`: id, user_id (null for system), type (`user|system`), balance `numeric(12,2)`, currency `USD`. CHECK: `type='system' OR balance >= 0`. One wallet per user; exactly one System Treasury wallet (created by a migration, not the seed).
-- `transactions`: id, reference UNIQUE (`TX-YYYYMMDD-000145`, filled by a column default from a sequence, date in Somalia time), type (`transfer|welcome_bonus`), sender_wallet_id, receiver_wallet_id, amount `numeric(12,2)` CHECK > 0, status (`completed`), idempotency_key `uuid` UNIQUE, created_at. CHECK sender ≠ receiver.
-- `ledger_entries`: id, transaction_id, wallet_id, amount (±, never 0), created_at. **Insert-only**: triggers reject UPDATE, DELETE and TRUNCATE for every role, including `service_role`.
+- `transactions`: id, reference UNIQUE (`TX-YYYYMMDD-000145`, filled by a column default from a sequence, date in Somalia time), type (`transfer|welcome_bonus`), sender_wallet_id, receiver_wallet_id, amount `numeric(12,2)` CHECK > 0, status (`completed`), idempotency_key `uuid` UNIQUE, created_at. CHECK sender ≠ receiver. At most one `welcome_bonus` per wallet (partial unique index).
+- `ledger_entries`: id, transaction_id, wallet_id, amount (±, never 0), **balance_after** (wallet balance right after this line; used by receipts and History), **seq** (identity: exact order of lines), created_at. **Insert-only**: triggers reject UPDATE, DELETE and TRUNCATE for every role, including `service_role`.
 - `notifications`: id, user_id, kind (`sent|received|security|welcome`), title, body, read_at, created_at
-- `app_sessions`: id, user_id, device_id, last_seen, revoked. Used for the server-side 60-second idle rule. **Server-only.**
+- `app_sessions`: id, user_id, device_id, **auth_session_id** (UNIQUE: the `session_id` claim of the Supabase login token), last_seen, revoked. Used for the server-side 60-second idle rule. **Server-only.**
 - `audit_logs`: id, user_id (nullable, e.g. login with an unknown number), device_id, action, details `jsonb`, created_at. Insert-only (same triggers). **Server-only.**
 
 Helpers used by policies live in the `private` schema (not reachable through the Data API): `private.current_app_user_id()` and `private.current_wallet_id()`. They return NULL for a deleted account.
@@ -166,34 +167,45 @@ Helpers used by policies live in the `private` schema (not reachable through the
 - Enable RLS on **every** table.
 - Clients may **SELECT** only their own rows in: `app_users`, `wallets`, `transactions` (ones they are part of), `ledger_entries` (lines of their wallet), `notifications`. A frozen user can still read; a deleted user sees nothing.
 - Clients have **no access at all** to `user_credentials`, `devices`, `app_sessions`, `audit_logs`. Only Edge Functions (with `service_role`) use them.
-- Clients may **UPDATE** only `app_users.language`, `app_users.notifications_on` and `notifications.read_at`, on their own rows. This is enforced with **column grants** (permission per column), because RLS policies only choose rows, not columns.
+- Clients may **UPDATE** only `app_users.notifications_on` and `notifications.read_at`, on their own rows. This is enforced with **column grants** (permission per column), because RLS policies only choose rows, not columns.
 - Clients may **never** INSERT or DELETE anything. All money changes go through the function below.
 - `anon` (not logged in) has no table access at all.
 - **Closed by default:** Supabase normally grants new tables and functions to `anon`/`authenticated`. Our migrations revoke that (including default privileges for future objects), so **every new table or function must be granted explicitly** in its migration.
 - Policies use `to authenticated` and `(select …)` around function calls (Supabase's recommended form for speed).
 - Never ship the `service_role` key in the app. It is used only inside Edge Functions.
 
-### 7.3 Money: `transfer_money(p_receiver_phone text, p_amount numeric, p_idempotency_key uuid)`
+### 7.3 Money: `transfer_money(p_receiver_phone text, p_amount text, p_idempotency_key uuid)`
 
-A `SECURITY DEFINER` Postgres function with `set search_path = ''` and fully qualified names (`public.wallets`), as Supabase recommends: otherwise a caller could plant a look-alike table that the function would use with its owner's rights. Grant EXECUTE to `authenticated` explicitly (see 7.2). It runs in **one transaction**, in this order:
+Code: `supabase/migrations/*_money_functions.sql`. A `SECURITY DEFINER` Postgres function with `set search_path = ''` and fully qualified names (`public.wallets`), as Supabase recommends: otherwise a caller could plant a look-alike table that the function would use with its owner's rights. Grant EXECUTE to `authenticated` explicitly (see 7.2). It runs in **one transaction**, in this order:
 
-1. The caller is active and their `app_sessions` row is valid, with `last_seen` within 60 s. Update `last_seen`.
-2. Validate the amount (> 0, at most 2 decimals; check this **before** storing, because a `numeric(12,2)` column silently rounds 10.555 to 10.56). The receiver exists and is active. Not sending to self.
-3. If the idempotency key was already used by this user, **return that earlier receipt** (no second transfer).
-4. `SELECT … FOR UPDATE` both wallets, **ordered by wallet id**, to prevent deadlocks.
-5. Check balance ≥ amount.
-6. Insert the transaction, **two** ledger lines (−amount / +amount), update both cached balances, insert two notifications and an audit row.
-7. Return the receipt: reference, date, receiver, amount, new balance.
+1. `private.require_session()`: the caller's `app_sessions` row (found via the token's `session_id` claim) exists, is not revoked and has `last_seen` within 60 s, else **E11**; a frozen account gets **E10**, a locked one **E05**. Updates `last_seen`.
+2. Validate the amount **as text, before any rounding**: `^[0-9]{1,10}(\.[0-9]{1,2})?$` and > 0, else **E09** (a `numeric(12,2)` column would silently round 10.555 to 10.56). The phone must be 9 digits, else **E01**.
+3. If the idempotency key was already used: same sender, amount and receiver → **return that earlier receipt**; anything different → **E15** "Request conflict".
+4. The receiver exists and is active, else **E06** (a frozen account looks unregistered). Not sending to self, else **E07**.
+5. `private.move_money()`: `SELECT … FOR UPDATE` both wallets, **ordered by wallet id**, to prevent deadlocks; **check the idempotency key again** (a parallel double tap may have committed while we waited: then step 3's rule applies); check balance ≥ amount, else **E08**.
+6. Insert the transaction, **two** ledger lines (−amount / +amount, each with `balance_after`), update both cached balances, insert two notifications and an audit row.
+7. Return the sender's `money_item`: transaction_id, reference, created_at, type, direction, amount, fee, counterparty_masked (`61X XXX 2046`), balance_after, status.
+
+Errors are raised with the SPEC §11 code as the whole message (`E08`); the app maps each code to its English text.
 
 *Plain English:* all or nothing, one sender at a time, and a double tap never pays twice.
+
+**Other money functions** (same file, same rules: `security definer`, `search_path = ''`, `require_session()` first):
+- `lookup_receiver(p_phone)` → masked number, or E01 / E06 / E07.
+- `my_transactions(p_direction, p_before_created_at, p_before_id, p_limit)` → History rows (`money_item`), newest first, other person's number masked. Paging: pass the last row's created_at and transaction_id.
+- `get_receipt(p_transaction_id)` → `money_item`, or NULL if the caller isn't part of it.
+- `grant_welcome_bonus(p_user_id)` → the $100.00 bonus from the System Treasury. **`service_role` only**; idempotent (one per wallet).
+- `private.move_money()` is the only code that moves money. Never write the money tables anywhere else.
+
+Notification texts (English only, from the mockup) live in `private.notification_text()` and SPEC §11.
 
 ### 7.4 Auth (Edge Functions in `supabase/functions/`)
 
 Supabase's built-in phone login needs an SMS code, and its passwords need at least 6 characters. That doesn't fit our rules (no OTP, 4-digit PIN), so use custom Edge Functions:
 
 - `auth-check-phone`: returns whether the number is registered.
-- `auth-register`: validates the phone and PIN rules; bcrypt-hashes the PIN and recovery code; creates the Supabase auth user (internal email such as `<phone>@users.garaadkaabe.invalid` plus a random server-only password, never sent to the phone); creates the user, wallet, device and welcome bonus; returns a session and the recovery code.
-- `auth-login`: checks lockout, device secret and PIN hash; handles the new-device flow; opens an `app_sessions` row; returns a session.
+- `auth-register`: validates the phone and PIN rules; bcrypt-hashes the PIN and recovery code; creates the Supabase auth user (internal email such as `<phone>@users.garaadkaabe.invalid` plus a random server-only password, never sent to the phone); creates the user, wallet and device; pays the welcome bonus with `rpc('grant_welcome_bonus')`; returns a session and the recovery code.
+- `auth-login`: checks lockout, device secret and PIN hash; handles the new-device flow; opens an `app_sessions` row with `auth_session_id` = the new token's `session_id` claim (without it every money function returns E11); returns a session.
 - `auth-biometric-login`: same, but verifies the biometric-protected device secret instead of the PIN.
 - `auth-reset-pin`, `auth-change-pin`, `auth-logout`, `account-freeze`.
 - `account-delete` (balance must be 0): sets `status = 'deleted'` and `phone = NULL`, deactivates devices, clears push tokens, revokes sessions, then **deletes the Supabase auth user** (`auth_user_id` becomes NULL). Removing the auth user frees its internal email, so the number can register again. The database refuses to remove the auth user of an account that is not deleted.
@@ -218,14 +230,15 @@ Supabase's built-in phone login needs an SMS code, and its passwords need at lea
 ## 8. Tests you must write and keep green
 
 - `supabase/tests/*.test.sql`, run with `npm run test:db` (see "How database tests work" below):
-  - insufficient balance is rejected
-  - sending to self is rejected
-  - amounts of 0, negative, or more than 2 decimals are rejected
-  - the same idempotency key produces one transfer
-  - after all tests, `SUM(ledger_entries.amount) = 0` and every balance equals the sum of its ledger lines
   - RLS: user A cannot read user B's rows (TC-19), and the app can't write money tables (TC-18) ✔ step 1
-- `scripts/` (Node):
-  - **TC-17: two concurrent $8 sends from a $10 wallet, exactly one succeeds.** This needs two parallel connections, so it is a small Node script, not a SQL file (build step 2).
+  - unregistered receiver, send to self, insufficient balance (TC-10..12) ✔ step 2
+  - amounts of 0, negative, or more than 2 decimals are rejected (TC-13) ✔ step 2
+  - valid send, no PIN, same key → one transfer, same key + different request → E15 (TC-14..16, TC-40) ✔ step 2
+  - 61 s idle → E11 (TC-24) ✔ step 2
+  - after all tests, `SUM(ledger_entries.amount) = 0` and every balance equals the sum of its ledger lines (TC-36, checked over the whole database) ✔ step 2
+- `scripts/test-concurrency.mjs` (Node, `npm run test:concurrency`):
+  - **TC-17: two concurrent $8 sends from a $10 wallet, exactly one succeeds** (10 rounds), plus a parallel double tap with one key. Needs two parallel connections, so it is a Node script, not a SQL file.
+  - Uses `SUPABASE_SECRET_KEY` for setup/cleanup only; the sends use the publishable key and the test users' own tokens. Leaves ~25 transactions from deleted test users in the dev database per run (ledger rows can't be deleted).
 - Edge Functions:
   - weak PIN rejected
   - duplicate phone rejected
@@ -253,7 +266,9 @@ Rules for every test file:
 - End with one line: `select 'TC-xx passed' as result;` (the runner prints it).
 - Helpers: `pg_temp.act_as('owner' | 'anon' | '<auth user id>')`, `expect_error(label, actor, sql, sqlstate)`, `expect_count(label, actor, sql, n)`, `exec_as(actor, sql)`.
 
-Numbers in use: DB-01..09 (schema), TC-18 + DB-10..11 (no client writes), TC-19 + DB-20..23 (RLS isolation).
+- App errors: `expect_app_error(label, actor, sql, 'E08')` checks the error message. `make_user(auth_id, phone)` builds a user with a live session and the welcome bonus.
+
+Numbers in use: DB-01..09 (schema), TC-18 + DB-10..11 (no client writes), TC-19 + DB-20..23 (RLS isolation), TC-10..16 + TC-24 + TC-40 + DB-30..34 (transfer_money), DB-40..44 (lookup, History, receipts), TC-36 (ledger invariants).
 
 ## 9. Project layout
 
@@ -278,6 +293,7 @@ npx supabase migration new <name>       # create a new migration file
 npx supabase db push --linked           # apply new migrations to the hosted dev project
 npx supabase migration list --linked    # which migrations the hosted project has
 npm run test:db                         # database tests (hosted, no Docker; see Section 8)
+npm run test:concurrency                # TC-17 (needs SUPABASE_SECRET_KEY in .env)
 npx supabase db advisors --linked       # Supabase security/performance checks
 npx supabase functions deploy <name>    # deploy an Edge Function (step 3)
 npx tsc --noEmit && npm run lint        # type-check and lint before every commit
@@ -298,4 +314,5 @@ The Supabase project is **hosted and dev-only**, and there is no Docker. `supaba
 - Explain decisions in plain language. When you use a technical term, add a one-line explanation.
 - Never weaken a rule in Section 6 or 7 to make something easier. If a rule blocks you, stop and ask.
 - Never put secrets, service keys or real personal data in the repo. Use `.env` (git-ignored) and `EXPO_PUBLIC_*` only for public values.
+- `SUPABASE_SECRET_KEY` (in `.env`, no `EXPO_PUBLIC_` prefix) is for test scripts only. **Never use it in app code**: ESLint fails on `process.env.*SECRET*` / `*SERVICE_ROLE*` or `sb_secret_` / `service_role` strings under `src/`. Edge Functions get their key from the Supabase runtime, not from `.env`.
 - If something in the design, SPEC or this file is unclear or contradictory, **ask before building**.
