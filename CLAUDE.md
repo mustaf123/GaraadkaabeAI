@@ -33,7 +33,7 @@ GaraadKaabeAI is a mobile wallet in the style of WAAFI / MyCash. It is a **portf
 
 Install each package with `npx expo install <package>` when the build step that needs it starts, not before.
 
-`design/SPEC.md` (version 2.3) uses this same stack. If any older document mentions Flutter, Laravel or MySQL, ignore that part. Where documents conflict, this file wins.
+`design/SPEC.md` (version 2.4) uses this same stack. If any older document mentions Flutter, Laravel or MySQL, ignore that part. Where documents conflict, this file wins.
 
 ## 3. Where the design lives
 
@@ -115,8 +115,10 @@ Colours, fonts and components are defined in Sections 4 and 5 below. There is no
 
 **Login**
 - The login screen shows two options: **Login with PIN** and **Use your fingerprint** (the fingerprint option only if the user enabled it).
-- 3 wrong PINs lock the account for 30 minutes. After 3 lockouts, it is locked for 24 hours.
+- 3 wrong PINs lock the login for 30 minutes. After 3 lockouts, it is locked for 24 hours. A successful login resets the lockout count. The lock lives **only** in `user_credentials.locked_until` (`app_users.status` stays `active`), so a locked user can still receive money.
 - On a new phone: log in with PIN, bind the new device, deactivate the old one, and send the old device an alert with **"This wasn't me"** (freezes the account). Sending works immediately.
+- **"This wasn't me"** calls `account-freeze` with the phone number and the old phone's device secret. It is accepted only from a device that was replaced in the last **7 days**.
+- Unknown number at login: **E06**.
 
 **Sessions**
 - The access token lives **in memory only**, never on disk.
@@ -133,7 +135,7 @@ Colours, fonts and components are defined in Sections 4 and 5 below. There is no
 
 **Receiving:** automatic. The receiver's balance updates via Realtime and they get a push and in-app notification.
 
-**Forgot PIN:** phone + recovery code + new PIN. This issues a **new** recovery code (the old one dies). 3 wrong codes lock recovery for 24 hours.
+**Forgot PIN:** phone + recovery code + new PIN. This issues a **new** recovery code (the old one dies). 3 wrong codes lock recovery for 24 hours (E16 wrong code, E17 recovery locked). A successful reset also **clears the PIN lock** and **unfreezes** a frozen account, because the recovery code proves ownership.
 
 **Profile**
 - Fingerprint on/off (turning it on needs the PIN)
@@ -152,7 +154,7 @@ Migrations already pushed to the hosted project are **never edited**. Every chan
 
 - `app_users`: id, auth_user_id (→ `auth.users`, NULL only after deletion), phone UNIQUE (9 digits; **NULL only when deleted**), status (`active|locked|frozen|deleted`), notifications_on, created_at. **No secrets here**: the app can read this row.
 - `user_credentials`: user_id (PK → app_users), pin_hash, recovery_hash, failed_pin_count, lockout_count, locked_until, recovery_failed_count, **recovery_locked_until** (the 24 h recovery lock), updated_at. **Server-only**: a 4-digit PIN hash can be cracked offline, which would skip the lockout, so the app must never read it.
-- `devices`: id, user_id, device_secret_hash, biometric_secret_hash (nullable), **push_token** (nullable, Expo push token), name, is_active, bound_at. At most **one active device per user** (partial unique index). **Server-only.**
+- `devices`: id, user_id, device_secret_hash, biometric_secret_hash (nullable), **push_token** (nullable, Expo push token), name, is_active, bound_at, **replaced_at** (when a new phone took over; used for the 7-day "This wasn't me" window). At most **one active device per user** (partial unique index). **Server-only.**
 - `wallets`: id, user_id (null for system), type (`user|system`), balance `numeric(12,2)`, currency `USD`. CHECK: `type='system' OR balance >= 0`. One wallet per user; exactly one System Treasury wallet (created by a migration, not the seed).
 - `transactions`: id, reference UNIQUE (`TX-YYYYMMDD-000145`, filled by a column default from a sequence, date in Somalia time), type (`transfer|welcome_bonus`), sender_wallet_id, receiver_wallet_id, amount `numeric(12,2)` CHECK > 0, status (`completed`), idempotency_key `uuid` UNIQUE, created_at. CHECK sender ≠ receiver. At most one `welcome_bonus` per wallet (partial unique index).
 - `ledger_entries`: id, transaction_id, wallet_id, amount (±, never 0), **balance_after** (wallet balance right after this line; used by receipts and History), **seq** (identity: exact order of lines), created_at. **Insert-only**: triggers reject UPDATE, DELETE and TRUNCATE for every role, including `service_role`.
@@ -204,15 +206,24 @@ Notification texts (English only, from the mockup) live in `private.notification
 Supabase's built-in phone login needs an SMS code, and its passwords need at least 6 characters. That doesn't fit our rules (no OTP, 4-digit PIN), so use custom Edge Functions:
 
 - `auth-check-phone`: returns whether the number is registered.
-- `auth-register`: validates the phone and PIN rules; bcrypt-hashes the PIN and recovery code; creates the Supabase auth user (internal email such as `<phone>@users.garaadkaabe.invalid` plus a random server-only password, never sent to the phone); creates the user, wallet and device; pays the welcome bonus with `rpc('grant_welcome_bonus')`; returns a session and the recovery code.
+- `auth-register`: validates the phone and PIN rules; hashes the PIN and recovery code; creates the Supabase auth user (internal email such as `<phone>@users.garaadkaabe.invalid` plus a random server-only password, never sent to the phone); then `rpc('auth_register_user')` creates the user, credentials, wallet and device **and pays the welcome bonus by calling `grant_welcome_bonus` inside the same transaction** (all or nothing; on failure the auth user is deleted again); returns a session and the recovery code. A registered number gets **E18**.
 - `auth-login`: checks lockout, device secret and PIN hash; handles the new-device flow; opens an `app_sessions` row with `auth_session_id` = the new token's `session_id` claim (without it every money function returns E11); returns a session.
 - `auth-biometric-login`: same, but verifies the biometric-protected device secret instead of the PIN.
-- `auth-reset-pin`, `auth-change-pin`, `auth-logout`, `account-freeze`.
+- `auth-enable-biometric` (needs the PIN), `auth-disable-biometric` (needs only a live session), `auth-reset-pin`, `auth-change-pin` (a wrong current PIN counts toward the lockout), `auth-logout`, `account-freeze`, `device-register-push`.
 - `account-delete` (balance must be 0): sets `status = 'deleted'` and `phone = NULL`, deactivates devices, clears push tokens, revokes sessions, then **deletes the Supabase auth user** (`auth_user_id` becomes NULL). Removing the auth user frees its internal email, so the number can register again. The database refuses to remove the auth user of an account that is not deleted.
 - PIN and recovery hashes, fail counters and lock times are read and written in `user_credentials`, never `app_users`.
 
+**Hashing (server only; the app never hashes and sends the raw values over HTTPS):**
+- PIN and recovery code: **bcrypt** (cost 10, `npm:bcryptjs`) of HMAC-SHA256(`PIN_PEPPER`, value). `PIN_PEPPER` is an Edge Function secret (`npx supabase secrets set`), never in the repo or the database, so a database leak alone can't be brute-forced.
+- Device and biometric secrets (32 random bytes): **SHA-256**. They are too random to crack, and a plain hash can be looked up (`account-freeze`).
+- Never log request bodies. Audit rows never contain a PIN, code or secret.
+
+**Server-side helpers:** every multi-step database change is one Postgres function in `*_auth_functions.sql` (one transaction each), executable by `service_role` only: `auth_register_user`, `auth_attempt_begin/end` (the attempt is counted **before** the hash is checked, so parallel guesses can't skip the lockout), `auth_open_session`, `auth_check_session`, `auth_bind_device`, `auth_freeze`, `auth_reset_pin`, `auth_delete_account` and the small setters.
+
+**Sessions:** `openSession` sets a new random password on the auth user, signs in with it, reads the token's `session_id` and calls `auth_open_session` (which revokes the user's other open sessions). Functions called with a user token first call `auth_check_session` (same 60 s / revoked / frozen rules as `transfer_money`).
+
 **Device binding without native modules:**
-- On first run, generate a random 32-byte **device secret** and store it in SecureStore. The server stores only its hash.
+- On first run, generate a random 32-byte **device secret** and store it in SecureStore. The app sends the secret itself (never a hash); the server stores only its SHA-256 hash.
 - **Fingerprint login:** store a second secret with `requireAuthentication: true`. Reading it triggers the fingerprint prompt, so a successful read proves the fingerprint.
 - Test this in a **development build**, not Expo Go.
 
@@ -224,8 +235,9 @@ Supabase's built-in phone login needs an SMS code, and its passwords need at lea
 - **Push token:** after every successful login, the app gets its Expo push token (`getExpoPushTokenAsync`) and saves it on its own `devices` row (Edge Function `device-register-push`). *Plain English: the push token is the phone's delivery address.*
 - Send pushes via Expo Push from the transfer path, using a DB webhook or trigger that calls an Edge Function (`send-push`).
 - Push **only** to the user's **active** device, and **only** if `app_users.notifications_on` is true. The in-app `notifications` row is always created, even when push is off.
-- **New-device alert:** read the **old** device's push token **before** deactivating it, and send the "This wasn't me" alert there. Never send it to the new device.
-- Deleting the account or logging out clears that device's `push_token`.
+- **Security alerts (`kind = 'security'`) exist only for:** a new phone, freeze ("This wasn't me"), PIN reset, PIN change, fingerprint on, fingerprint off. **A normal login (same phone, PIN or fingerprint) creates no alert.** The Notifications mockup's "New login" sample stands for the new-phone alert: its title is **"New phone logged in to your wallet"**.
+- **New-device alert:** read the **old** device's push token **before** deactivating it, and send the "This wasn't me" alert there. Never send it to the new device. **Security alerts ignore both rules above** (they go to the inactive old device, even with Notifications off).
+- Only the **Log out** button (`auth-logout`) and account deletion clear the device's `push_token`. Automatic logouts (60 s idle, background) keep it, so a closed app still receives pushes.
 
 ## 8. Tests you must write and keep green
 
@@ -239,7 +251,7 @@ Supabase's built-in phone login needs an SMS code, and its passwords need at lea
 - `scripts/test-concurrency.mjs` (Node, `npm run test:concurrency`):
   - **TC-17: two concurrent $8 sends from a $10 wallet, exactly one succeeds** (10 rounds), plus a parallel double tap with one key. Needs two parallel connections, so it is a Node script, not a SQL file.
   - Uses `SUPABASE_SECRET_KEY` for setup/cleanup only; the sends use the publishable key and the test users' own tokens. Leaves ~25 transactions from deleted test users in the dev database per run (ledger rows can't be deleted).
-- Edge Functions:
+- Edge Functions: `scripts/test-functions.mjs` (`npm run test:functions`) calls the **deployed** functions on the hosted dev project with the publishable key; `SUPABASE_SECRET_KEY` only for setup, cleanup and moving the clock. Covers TC-03, 05, 07, 08, 09, 25, 26, 33, 34 (server side), 35, plus:
   - weak PIN rejected
   - duplicate phone rejected
   - 3 wrong PINs → locked 30 min
@@ -268,7 +280,7 @@ Rules for every test file:
 
 - App errors: `expect_app_error(label, actor, sql, 'E08')` checks the error message. `make_user(auth_id, phone)` builds a user with a live session and the welcome bonus.
 
-Numbers in use: DB-01..09 (schema), TC-18 + DB-10..11 (no client writes), TC-19 + DB-20..23 (RLS isolation), TC-10..16 + TC-24 + TC-40 + DB-30..34 (transfer_money), DB-40..44 (lookup, History, receipts), TC-36 (ledger invariants).
+Numbers in use: DB-01..09 (schema), TC-18 + DB-10..11 (no client writes), TC-19 + DB-20..23 (RLS isolation), TC-10..16 + TC-24 + TC-40 + DB-30..35 (transfer_money; DB-35 = receiver re-check after locking), DB-40..44 (lookup, History, receipts), TC-36 (ledger invariants), DB-50..58 (auth helpers). Edge Function checks without a SPEC test case (`scripts/test-functions.mjs`): FN-01 check-phone, FN-02 register, FN-03 login, FN-04 freeze, FN-05 biometric, FN-06 reset PIN, FN-07 change PIN, FN-08 push token + logout.
 
 ## 9. Project layout
 
@@ -296,6 +308,8 @@ npm run test:db                         # database tests (hosted, no Docker; see
 npm run test:concurrency                # TC-17 (needs SUPABASE_SECRET_KEY in .env)
 npx supabase db advisors --linked       # Supabase security/performance checks
 npx supabase functions deploy <name>    # deploy an Edge Function (step 3)
+npm run test:functions                  # Edge Function tests against the deployed functions
+npx supabase secrets set PIN_PEPPER=... # one-time; keep a backup (changing it invalidates every PIN)
 npx tsc --noEmit && npm run lint        # type-check and lint before every commit
 ```
 

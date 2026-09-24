@@ -393,6 +393,30 @@ begin
     $q$select public.grant_welcome_bonus(id) from public.app_users where phone = '690000003'$q$, '22023');
 end $$;
 
-select 'TC-10..TC-16, TC-24, TC-40 passed; DB-30..DB-34 passed' as result;
+-- DB-35: move_money re-checks the receiver AFTER locking. A transfer that passed the
+-- receiver check and then waited for the lock while the receiver deleted (or froze)
+-- the account must not pay that wallet. Calling move_money directly plays the part
+-- of the transfer that already passed step 4.
+do $$
+declare
+  v_a_wallet uuid := (select w.id from public.wallets w join public.app_users u on u.id = w.user_id
+                      where u.phone = '690000001');
+  v_b_wallet uuid := (select w.id from public.wallets w join public.app_users u on u.id = w.user_id
+                      where u.phone = '690000002');
+  v_key uuid := gen_random_uuid();
+  v_a_before numeric := pg_temp.balance_of('690000001');
+  v_b_before numeric := pg_temp.balance_of('690000002');
+begin
+  update public.app_users set status = 'frozen' where phone = '690000002';
+  perform pg_temp.expect_app_error('DB-35', 'owner',
+    format('select private.move_money(%L, %L, 1.00, %L, %L)', v_a_wallet, v_b_wallet, 'transfer', v_key), 'E06');
+  perform pg_temp.check('DB-35', not exists (select 1 from public.transactions where idempotency_key = v_key),
+    'a transaction was written');
+  perform pg_temp.check('DB-35', pg_temp.balance_of('690000001') = v_a_before
+    and pg_temp.balance_of('690000002') = v_b_before, 'money moved');
+  update public.app_users set status = 'active' where phone = '690000002';
+end $$;
+
+select 'TC-10..TC-16, TC-24, TC-40 passed; DB-30..DB-35 passed' as result;
 
 rollback;

@@ -5,7 +5,8 @@ const expoConfig = require("eslint-config-expo/flat");
 module.exports = defineConfig([
   expoConfig,
   {
-    ignores: ["dist/*"],
+    // supabase/functions is Deno code, checked with `npm run check:functions`.
+    ignores: ["dist/*", "supabase/functions/**"],
   },
   // Server-only secrets must never reach the app. (Expo only bundles EXPO_PUBLIC_*
   // variables anyway; this rule stops the mistake before it is written.)

@@ -48,3 +48,5 @@ npm run lint && npx tsc --noEmit
 3. **No PIN on send and no limits.** Anyone who unlocks a logged-in phone could send the whole balance within the 60-second window.
 4. **If a user loses both their PIN and recovery code,** the account cannot be recovered.
 5. **The server's 60-second idle rule covers function calls only.** Sending, receiver lookup, history and receipts are rejected after 60 s without a request. Plain reads of the user's own rows (balance, notifications) and Realtime updates are not checked by the server; the app's own 60-second no-touch logout covers them. Tying those reads to the session would break live updates after 60 s without a function call.
+6. **Someone who knows your number can lock your login** by entering wrong PINs (30 minutes, then 24 hours). Receiving money still works, and Forgot PIN clears the lock.
+7. **Anyone can check whether a number is registered** (the phone check before login, and error E06 when sending). Without OTP there is no way to hide this.

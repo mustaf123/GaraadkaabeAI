@@ -42,7 +42,10 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test:db": "node scripts/test-db.mjs",
-    "test:concurrency": "node --env-file=.env scripts/test-concurrency.mjs"
+    "test:concurrency": "node --env-file=.env scripts/test-concurrency.mjs",
+    "check:functions": "npx --yes deno@2.9.6 check --config supabase/functions/deno.json supabase/functions",
+    "test:functions:unit": "npx --yes deno@2.9.6 test --config supabase/functions/deno.json supabase/functions",
+    "test:functions": "node --env-file=.env scripts/test-functions.mjs"
   },
   "private": true
 }

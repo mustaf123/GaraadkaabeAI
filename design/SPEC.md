@@ -1,12 +1,14 @@
 # SPEC.md — GaraadKaabeAI: System Requirements and Design
 
-**Version:** 2.3 (24 Sep 2026). **Stack:** React Native + Expo, Supabase.
+**Version:** 2.4 (24 Sep 2026). **Stack:** React Native + Expo, Supabase.
 
 *2.1 changes:* secrets moved to a server-only `user_credentials` table; `recovery_locked_until` added; a deleted account's number can register again; the app has no access to `devices`, `app_sessions`, `audit_logs`.
 
 *2.2 changes:* new error E15 "Request conflict" and test TC-40; `transfer_money` takes the amount as text and checks it before any rounding; `lookup_receiver` returns only the masked number; History and Receipt functions added; notification texts; limitation 5.
 
 *2.3 changes:* the app is **English only**: Somali texts removed from §11, no language setting in Profile (FR-33), `app_users.language` dropped.
+
+*2.4 changes (auth design):* device and biometric secrets hashed with SHA-256, PIN and recovery code with bcrypt + a server-side pepper (NFR-02); the app sends the device secret, not its hash (§6.1); the PIN lock lives only in `user_credentials` and a successful login resets the lockout count (§6.2); `account-freeze` takes the phone + old device secret, within 7 days (§6.4); security alerts ignore the active-device and Notifications-off rules, and only the Log out button and deletion clear the push token (§6.4b); Forgot PIN clears the lock and unfreezes (§6.6); new errors E16–E18; `move_money` re-checks the receiver after locking; limitations 6 and 7.
 
 This file holds the **rules**: what the app must do and how it must behave. The **look** of each screen is in `design/screens/` and `design/screenshots/`. For how to build it, see `CLAUDE.md`.
 
@@ -41,6 +43,8 @@ Somali mobile-money apps are widely used, but their users report slow responses,
 3. **No PIN on send and no limits.** Anyone who unlocks a logged-in phone could send the whole balance within the 60-second window.
 4. **If a user loses both their PIN and recovery code,** the account cannot be recovered.
 5. **The server's 60-second idle rule covers function calls only** (send, lookup, history, receipts). Plain reads of the user's own rows (balance, notifications) and Realtime are not checked by the server; the app's 60-second no-touch logout covers them.
+6. **Someone who knows your number can lock your login** by entering wrong PINs (30 min, then 24 h). Receiving money still works, and Forgot PIN clears the lock.
+7. **Anyone can check whether a number is registered** (`auth-check-phone`, and E06 when sending). Without OTP there is no way to hide this.
 
 ---
 
@@ -126,7 +130,7 @@ Somali mobile-money apps are widely used, but their users report slow responses,
 | ID | Area | Requirement |
 |---|---|---|
 | NFR-01 | Correctness | Money is never created or lost: the sum of all ledger entries is always 0. |
-| NFR-02 | Security | PIN, recovery code and device secrets are stored only as **bcrypt hashes** on the server, in tables the app can never read (`user_credentials`, `devices`). The PIN is never stored on the phone. |
+| NFR-02 | Security | Hashing happens **only on the server**. PIN and recovery code: **bcrypt** of an HMAC with a server-side secret (`PIN_PEPPER`), so a database leak alone can't be brute-forced. Device and biometric secrets (32 random bytes): **SHA-256**. All hashes live in tables the app can never read (`user_credentials`, `devices`). The PIN is never stored on the phone. |
 | NFR-03 | Security | HTTPS only. The Supabase `service_role` key never ships in the app. |
 | NFR-04 | Security | Row Level Security on every table. Clients can never write to money tables directly. |
 | NFR-05 | Performance | A send completes in under 3 seconds on 3G. |
@@ -167,8 +171,8 @@ Somali mobile-money apps are widely used, but their users report slow responses,
 
 ### 6.1 Register
 1. The app calls `auth-check-phone`. If the number is new, the user creates and confirms a PIN.
-2. The app generates a random **device secret** in SecureStore and sends phone, PIN and the device-secret hash to `auth-register`.
-3. The server validates the PIN rules, hashes everything, and creates the auth user, `app_users` row, wallet, device and welcome bonus (a ledger transfer).
+2. The app generates a random **device secret** in SecureStore and sends phone, PIN and the device secret itself (never a hash) to `auth-register` over HTTPS. A registered number gets E18.
+3. The server validates the PIN rules, hashes everything, and creates the auth user, then the `app_users` row, credentials, wallet, device and welcome bonus (`grant_welcome_bonus`, a ledger transfer) in **one transaction**.
 4. The server returns a session and the recovery code. The app shows the recovery code, then Enable fingerprint, then Home.
 
 ### 6.2 Login with PIN (same phone)
@@ -177,7 +181,7 @@ The server checks, in order:
 2. device active and device secret matches
 3. PIN hash matches
 
-On success it opens an `app_sessions` row and returns a session (kept in memory only). On failure it adds 1 to the fail count; 3 fails lock the account for 30 min, and 3 lockouts lock it for 24 h.
+On success it opens an `app_sessions` row and returns a session (kept in memory only). Each attempt is counted **before** the PIN is checked, so parallel guesses can't skip the limit; 3 fails lock the login for 30 min, and 3 lockouts lock it for 24 h. The lock is stored only in `user_credentials.locked_until` (`app_users.status` stays `active`, so the user can still receive money). A successful login resets the fail count and the lockout count. An unknown number gets E06.
 
 ### 6.3 Login with fingerprint
 1. The user taps **Use your fingerprint**.
@@ -190,7 +194,7 @@ On success it opens an `app_sessions` row and returns a session (kept in memory 
 ### 6.4 Login on a new phone
 The user enters their number and the server says it is registered, so the app shows Login. The user enters the PIN and the app creates a new device secret. The server then:
 1. deactivates the old device and binds the new one
-2. alerts the old device with a **"This wasn't me"** button, which calls `account-freeze`
+2. alerts the old device with a **"This wasn't me"** button, which calls `account-freeze` with the phone number and the **old device's secret**. The server accepts it only from a device that was replaced in the last **7 days**; it freezes the account and revokes all sessions.
 
 Sending works immediately.
 
@@ -198,8 +202,8 @@ Sending works immediately.
 1. After every successful login, the app requests notification permission, gets its **Expo push token** and saves it on its `devices` row (`device-register-push`).
 2. When a transfer, security event or welcome happens, the server always inserts an in-app `notifications` row.
 3. It sends a push (`send-push`) **only** to the user's **active** device, and **only** if Notifications is on in Profile.
-4. New-device login: the server reads the **old** device's token **before** deactivating it and sends the "This wasn't me" alert there, never to the new device.
-5. Logout and account deletion clear that device's `push_token`.
+4. New-device login: the server reads the **old** device's token **before** deactivating it and sends the "This wasn't me" alert there, never to the new device. **Security alerts ignore the rules in step 3**: they go to the inactive old device, even with Notifications off.
+5. Only the **Log out** button and account deletion clear that device's `push_token`. Automatic logouts (60 s idle, background) keep it, so a closed app still receives pushes.
 
 *Plain English:* the push token is the phone's postal address. Without it, the server has nowhere to deliver the message.
 
@@ -223,7 +227,7 @@ sequenceDiagram
 ```
 
 ### 6.6 Forgot PIN
-The user enters phone + recovery code + new PIN twice. The server compares the recovery-code hash (3 wrong tries lock recovery for 24 h), saves the new PIN, and issues a **new** recovery code, which the app shows once.
+The user enters phone + recovery code + new PIN twice. The server compares the recovery-code hash (E16; 3 wrong tries lock recovery for 24 h, E17), saves the new PIN, and issues a **new** recovery code, which the app shows once. A successful reset also **clears the PIN lock**, **unfreezes** a frozen account (the recovery code proves ownership), revokes all earlier sessions, and logs in on this phone (new-device flow if it is a different phone).
 
 ### 6.7 Auto-logout
 | Trigger | Detected by | Result |
@@ -243,7 +247,7 @@ Profile → Delete this account → confirmation sheet. If the balance is greate
 
 | # | Layer | Protects against |
 |---|---|---|
-| 1 | PIN hashed with bcrypt | A database leak revealing PINs |
+| 1 | PIN hashed with bcrypt + server-side pepper | A database leak revealing PINs |
 | 2 | Weak-PIN blocking | Easy guesses like 1234 |
 | 3 | Lockout: 3 wrong PINs → 30 min; 3 lockouts → 24 h | Guessing all 10,000 PINs |
 | 4 | Device binding (device secret, hash on server) | Using the account from another phone |
@@ -278,9 +282,9 @@ Profile → Delete this account → confirmation sheet. If the balance is greate
 
 | Table | Columns | Rules |
 |---|---|---|
-| `app_users` | id, auth_user_id, phone, status, notifications_on, created_at | phone UNIQUE, 9 digits, NULL only when deleted; auth_user_id NULL only when deleted; status ∈ active / locked / frozen / deleted |
+| `app_users` | id, auth_user_id, phone, status, notifications_on, created_at | phone UNIQUE, 9 digits, NULL only when deleted; auth_user_id NULL only when deleted; status ∈ active / locked / frozen / deleted (PIN lockouts do **not** use `locked`; see §6.2) |
 | `user_credentials` | user_id, pin_hash, recovery_hash, failed_pin_count, lockout_count, locked_until, recovery_failed_count, recovery_locked_until, updated_at | **server-only**; one row per user |
-| `devices` | id, user_id, device_secret_hash, biometric_secret_hash, push_token, name, is_active, bound_at | **server-only**; one active device per user (partial unique index); push_token = Expo push token (the phone's delivery address) |
+| `devices` | id, user_id, device_secret_hash, biometric_secret_hash, push_token, name, is_active, bound_at, replaced_at | **server-only**; one active device per user (partial unique index); push_token = Expo push token (the phone's delivery address) |
 | `wallets` | id, user_id, type, balance, currency | type ∈ user / system; `type='system' OR balance >= 0` |
 | `transactions` | id, reference, type, sender_wallet_id, receiver_wallet_id, amount, status, idempotency_key, created_at | reference UNIQUE; idempotency_key UNIQUE; amount > 0; sender ≠ receiver; one welcome bonus per wallet |
 | `ledger_entries` | id, transaction_id, wallet_id, amount, balance_after, seq, created_at | insert-only; index (wallet_id, created_at); seq = exact order of lines |
@@ -302,14 +306,15 @@ Profile → Delete this account → confirmation sheet. If the balance is greate
 | Kind | Name | Input | Output |
 |---|---|---|---|
 | Edge Function | `auth-check-phone` | phone | registered: true/false |
-| Edge Function | `auth-register` | phone, pin, device_secret, device_name | session, recovery_code |
-| Edge Function | `auth-login` | phone, pin, device_secret | session |
+| Edge Function | `auth-register` | phone, pin, device_secret, device_name | session, recovery_code (or E01 / E03 / E18) |
+| Edge Function | `auth-login` | phone, pin, device_secret, device_name | session (or E04 / E05 / E06 / E10) |
 | Edge Function | `auth-biometric-login` | phone, biometric_secret, device_secret | session |
-| Edge Function | `auth-enable-biometric` / `auth-disable-biometric` | pin, biometric_secret | ok |
-| Edge Function | `auth-reset-pin` | phone, recovery_code, new_pin, device_secret | session, new recovery_code |
+| Edge Function | `auth-enable-biometric` | pin, biometric_secret | ok |
+| Edge Function | `auth-disable-biometric` | — (live session only) | ok |
+| Edge Function | `auth-reset-pin` | phone, recovery_code, new_pin, device_secret, device_name | session, new recovery_code (or E16 / E17) |
 | Edge Function | `auth-change-pin` | current_pin, new_pin | ok |
 | Edge Function | `auth-logout` | — | ok |
-| Edge Function | `account-freeze` | — (from the old-device alert) | ok |
+| Edge Function | `account-freeze` | phone, device_secret (of the replaced phone, within 7 days) | ok |
 | Edge Function | `account-delete` | — (balance must be 0) | ok |
 | Edge Function | `device-register-push` | push_token | ok |
 | Edge Function (internal) | `send-push` | user_id, title, body | sent / skipped (called by the server only) |
@@ -355,6 +360,11 @@ Profile → Delete this account → confirmation sheet. If the balance is greate
 | E13 | Fingerprint failed 3× | Fingerprint not recognized. Use your PIN |
 | E14 | Delete with balance | Send your balance out before deleting |
 | E15 | Same request key reused with a different amount or receiver | Request conflict. Start the payment again |
+| E16 | Wrong recovery code | Wrong recovery code. 2 attempts left |
+| E17 | Recovery locked (3 wrong codes) | Recovery is locked. Try again in 24 hours |
+| E18 | Registering a number that is already registered | This number is already registered. Log in instead |
+
+E06 is also returned when someone tries to log in with a number that is not registered.
 
 `money_item` (returned by the money functions): transaction_id, reference, created_at, type, direction (sent / received), amount, fee, counterparty_masked, balance_after, status.
 

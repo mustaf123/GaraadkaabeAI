@@ -413,3 +413,48 @@ enabled = true
 # formatted with uppercase keywords, indent 2, max width 180, trailing commas,
 # and column/key alignment. Set to "null" to emit raw, unformatted SQL.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":180,\"commaStyle\":\"trailing\"}"
+
+# ---------------------------------------------------------------------------
+# GaraadKaabeAI Edge Functions (CLAUDE.md §7.4)
+# Functions called before login use the publishable key, not a user token, so the
+# platform's JWT check is off; @supabase/server's withSupabase checks the key instead.
+# Functions called while logged in keep verify_jwt = true (the default).
+# ---------------------------------------------------------------------------
+
+[functions.auth-check-phone]
+verify_jwt = false
+
+[functions.auth-register]
+verify_jwt = false
+
+[functions.auth-login]
+verify_jwt = false
+
+[functions.account-freeze]
+verify_jwt = false
+
+[functions.auth-biometric-login]
+verify_jwt = false
+
+# Logged-in functions: the platform checks the JWT (verify_jwt = true), then
+# withSupabase({ auth: 'user' }) and requireSession apply the app_sessions rules.
+[functions.auth-enable-biometric]
+verify_jwt = true
+
+[functions.auth-disable-biometric]
+verify_jwt = true
+
+[functions.auth-reset-pin]
+verify_jwt = false
+
+[functions.auth-change-pin]
+verify_jwt = true
+
+[functions.auth-logout]
+verify_jwt = true
+
+[functions.device-register-push]
+verify_jwt = true
+
+[functions.account-delete]
+verify_jwt = true

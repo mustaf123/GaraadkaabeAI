@@ -16,39 +16,25 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { spawnSync } from 'node:child_process';
-import { randomBytes, randomInt, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import {
+  admin as adminClient,
+  clientOptions,
+  deleteTestUser,
+  jwtClaims,
+  publishableKey,
+  randomPhone,
+  redact,
+  requireEnv,
+  url,
+} from './lib/test-support.mjs';
 
 const ROUNDS = 10;
 
-const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const publishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-const secretKey = process.env.SUPABASE_SECRET_KEY;
-
-if (!url || !publishableKey || !secretKey) {
-  const missing = Object.entries({
-    EXPO_PUBLIC_SUPABASE_URL: url,
-    EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: publishableKey,
-    SUPABASE_SECRET_KEY: secretKey,
-  })
-    .filter(([, value]) => !value)
-    .map(([name]) => name);
-  console.error(`TC-17 failed: missing in .env: ${missing.join(', ')}`);
-  process.exit(1);
-}
-
-// Tokens live in memory only, like in the app.
-const clientOptions = { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } };
-const admin = createClient(url, secretKey, clientOptions);
+requireEnv('TC-17');
+const admin = adminClient();
 
 class TestFailure extends Error {}
-
-// Error messages are printed, keys never are: remove both key values and anything
-// shaped like a Supabase key (sb_secret_…, sb_publishable_…, or a JWT eyJ…).
-function redact(text) {
-  let out = String(text);
-  for (const key of [secretKey, publishableKey]) out = out.split(key).join('[key]');
-  return out.replace(/\bsb_(secret|publishable)_[A-Za-z0-9_-]+/g, '[key]').replace(/\beyJ[A-Za-z0-9_.-]+/g, '[key]');
-}
 
 function fail(message) {
   throw new TestFailure(redact(`TC-17 failed: ${message}`));
@@ -58,10 +44,6 @@ async function must(what, request) {
   const { data, error } = await request;
   if (error) fail(`${what}: ${error.message}`);
   return data;
-}
-
-function jwtClaims(token) {
-  return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
 }
 
 // A test user registered the way auth-register will do it (build step 3),
@@ -74,7 +56,7 @@ async function createTestUser(created) {
 
   // Retries only cover a random number that is already taken.
   for (let attempt = 0; attempt < 5 && !authId; attempt++) {
-    phone = `699${String(randomInt(0, 1_000_000)).padStart(6, '0')}`;
+    phone = randomPhone();
     const { data, error } = await admin.auth.admin.createUser({
       email: `${phone}@users.garaadkaabe.invalid`,
       password,
@@ -142,17 +124,7 @@ function describe(results) {
 async function cleanup(users) {
   for (const user of users) {
     try {
-      if (user.userId) {
-        await must('revoke sessions', admin.from('app_sessions').update({ revoked: true }).eq('user_id', user.userId));
-        await must('deactivate devices',
-          admin.from('devices').update({ is_active: false, push_token: null }).eq('user_id', user.userId));
-        await must('mark deleted',
-          admin.from('app_users').update({ status: 'deleted', phone: null }).eq('id', user.userId));
-      }
-      if (user.authId) {
-        const { error } = await admin.auth.admin.deleteUser(user.authId);
-        if (error) throw new Error(`delete login: ${error.message}`);
-      }
+      await deleteTestUser(user);
     } catch (error) {
       console.error(redact(`cleanup of test user ${user.phone} failed: ${error.message}`));
     }
