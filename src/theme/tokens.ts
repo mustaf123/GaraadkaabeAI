@@ -75,6 +75,9 @@ export interface ThemeColors {
   logoGreen: string;
   logoWhite: string;
 
+  // See-through white chip on a `brand` background (the Login header; the same in both themes)
+  chipOnBrand: string;
+
   // Wallet-number card on Home (the same in both themes)
   promoBg: string;
   promoText: string;
@@ -103,6 +106,7 @@ const fixed = {
   onBadge: '#FFFFFF',
   logoGreen: '#0B6B57',
   logoWhite: '#FFFFFF',
+  chipOnBrand: 'rgba(255,255,255,0.14)',
   promoBg: '#0B3D33',
   promoText: '#FFFFFF',
   promoMuted: '#A9D8C8',

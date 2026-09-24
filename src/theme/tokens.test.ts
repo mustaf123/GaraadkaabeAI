@@ -70,7 +70,9 @@ const TEXT_PAIRS: [Key, Key, Key?][] = [
   ['promoBtnText', 'promoBtn'],
   ['promoBtnText', 'promoBtnPressed'],
   ['warnText', 'warnSoft', 'sheet'],
-  ['brandText', 'brandSoft'],
+  ['warnText', 'warnSoft', 'bg'], // warning InfoBanner on a page (Recovery code)
+  ['brandText', 'brandSoft'], // info InfoBanner, Chip
+  ['onBrand', 'chipOnBrand', 'brand'], // Chip on the green Login header
   ['text', 'brandSoft'], // a quick amount while pressed
 ];
 

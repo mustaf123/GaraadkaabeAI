@@ -8,6 +8,7 @@
 import { Redirect, router } from 'expo-router';
 import {
   Bell,
+  Check,
   ChevronLeft,
   Clock,
   Eye,
@@ -24,7 +25,9 @@ import { AmountInput } from '@/components/AmountInput';
 import { BalanceCard } from '@/components/BalanceCard';
 import { BottomSheet } from '@/components/BottomSheet';
 import { Checkbox } from '@/components/Checkbox';
+import { Chip } from '@/components/Chip';
 import { IconButton } from '@/components/IconButton';
+import { InfoBanner, Strong } from '@/components/InfoBanner';
 import { Keypad } from '@/components/Keypad';
 import { LogoMark } from '@/components/LogoMark';
 import { OrDivider } from '@/components/OrDivider';
@@ -34,8 +37,10 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { ReceiveSheet } from '@/components/ReceiveSheet';
 import { Screen } from '@/components/Screen';
 import { SecondaryButton } from '@/components/SecondaryButton';
+import { SectionHeader } from '@/components/SectionHeader';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { StepProgress } from '@/components/StepProgress';
+import { SummaryCard, SummaryDivider, SummaryRow } from '@/components/SummaryCard';
 import { TabBar } from '@/components/TabBar';
 import { TextField } from '@/components/TextField';
 import { TextLink } from '@/components/TextLink';
@@ -115,12 +120,10 @@ function Gallery() {
 
       <BottomSheet visible={sheet === 'delete'} onClose={() => setSheet(null)} label="Delete account">
         <Text style={[styles.t.sheetTitle, { color: colors.text }]}>Delete your account?</Text>
-        <View style={styles.warn}>
-          <Text style={styles.warnText}>
-            You still have <Text style={styles.warnStrong}>$121.50</Text>. Send it to another wallet first. An account
-            with money in it cannot be deleted.
-          </Text>
-        </View>
+        <InfoBanner tone="warning">
+          You still have <Strong>{formatMoney('121.50')}</Strong>. Send it to another wallet first. An account with
+          money in it cannot be deleted.
+        </InfoBanner>
         <PrimaryButton title="Delete account" tone="danger" disabled />
         <SecondaryButton title="Cancel" variant="plain" onPress={() => setSheet(null)} />
       </BottomSheet>
@@ -303,6 +306,56 @@ function Gallery() {
           <SecondaryButton title="Use your fingerprint" icon={FingerprintPattern} onPress={() => {}} />
         </Section>
 
+        <Section title="Chip" compare="Profile.png, Receipt.png, SendMoney.png, Login.png (header)">
+          <Chip label="Active wallet" size="sm" />
+          <Chip label="Completed" icon={Check} />
+          <Chip label={`Available: ${formatMoney('131.50')}`} size="lg" />
+          <View style={styles.greenHeader}>
+            <Chip label={maskPhone('615552046')} icon={UserRound} size="xl" tone="onBrand" />
+          </View>
+        </Section>
+
+        <Section title="InfoBanner" compare="ForgotPin.png, RecoveryCode.png, Profile-delete.png, ConfirmSend.png">
+          <InfoBanner>You will get a new recovery code. The old one stops working.</InfoBanner>
+          <InfoBanner tone="warning">
+            Write it on paper and keep it safe. Anyone with this code and your number can reset your PIN.
+          </InfoBanner>
+          <InfoBanner tone="warning">
+            You still have <Strong>{formatMoney('121.50')}</Strong>. Send it to another wallet first. An account with
+            money in it cannot be deleted.
+          </InfoBanner>
+          <InfoBanner tone="note">Check the number carefully. Sent money cannot be reversed.</InfoBanner>
+        </Section>
+
+        <Section title="SummaryCard" compare="ConfirmSend.png, Receipt.png">
+          <SummaryCard>
+            <SummaryRow label="To" value="61X XXX 4521" />
+            <SummaryRow label="Amount" value={formatMoney('10.00')} money />
+            <SummaryRow label="Fee" value={formatMoney('0.00')} money />
+            <SummaryDivider />
+            <SummaryRow label="Total" value={formatMoney('10.00')} money strong />
+            <SummaryRow label="Balance after" value={formatMoney('121.50')} money />
+          </SummaryCard>
+          <SummaryCard>
+            <SummaryRow label="Transaction ID" value="TX-20260923-000145" />
+            <SummaryRow label="Date" value="23 Sep 2026, 19:12" />
+            <SummaryRow label="To" value="61X XXX 4521" />
+            <SummaryRow label="Fee" value={formatMoney('0.00')} money />
+            <SummaryDivider dashed />
+            <SummaryRow label="New balance" value={formatMoney('121.50')} money strong />
+            <SummaryRow label="Status" value={<Chip label="Completed" icon={Check} />} />
+          </SummaryCard>
+        </Section>
+
+        <Section title="SectionHeader" compare="History.png, Profile.png, Notifications.png (flush on every screen)">
+          <View style={styles.card}>
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Card edge</Text>
+            </View>
+          </View>
+          <SectionHeader title="Security" />
+        </Section>
+
         <Section title="PrimaryButton + SecondaryButton" compare="CreatePin.png, Login.png, Profile-delete.png">
           <PrimaryButton title="Continue" onPress={() => {}} />
           <PrimaryButton title="Continue" disabled />
@@ -370,7 +423,7 @@ function Gallery() {
 
         <Section title="SegmentedControl + TransactionRow (list)" compare="History.png">
           <SegmentedControl options={DIRECTIONS} value={direction} onChange={setDirection} label="Show" />
-          <Text style={styles.overline}>Today</Text>
+          <SectionHeader title="Today" />
           <View style={styles.card}>
             {TRANSACTIONS.filter((t) => direction === 'all' || t.direction === direction).map((t) => (
               <TransactionRow key={t.counterparty} {...t} size="list" onPress={() => {}} />
@@ -450,8 +503,6 @@ const useStyles = createStyles(({ colors, radius, type }) => ({
     settingLabel: { ...type.bodyStrong, color: colors.text, flex: 1 },
     logoBox: { width: 104, height: 104, borderRadius: radius.card, alignItems: 'center', justifyContent: 'center' },
     tabBarBox: { borderRadius: radius.card, overflow: 'hidden', borderWidth: 1, borderColor: colors.line },
-    warn: { alignSelf: 'stretch', padding: 14, paddingHorizontal: 16, borderRadius: radius.button, backgroundColor: colors.warnSoft },
-    warnText: { ...type.body, fontSize: 14, fontFamily: type.captionStrong.fontFamily, color: colors.warnText },
-    warnStrong: { fontFamily: type.bodyStrong.fontFamily },
+    greenHeader: { padding: 20, borderRadius: radius.card, backgroundColor: colors.brand, alignItems: 'flex-start' },
   }),
 }));

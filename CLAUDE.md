@@ -111,6 +111,8 @@ The full list (disabled buttons, PIN boxes, segmented control, toggle, sheet, wa
 
 Form controls (typing filters in `src/lib/input.ts`): `TextField` (label, hint / green ✓ status / error; thick green border while typing), `PhoneInput` (fixed `+252`, shows `61 555 2046`, gives the screen the plain 9 digits), `AmountInput` (Sora amount plus the $5 $10 $20 $50 quick amounts; typing follows the server's amount rule, and amounts are compared in cents), `Checkbox` (drawn by us, the whole row can be tapped), `OrDivider` (Login).
 
+Display: `Chip` (pill with optional icon; sizes `sm` 24 / `md` 28 / `lg` 32 / `xl` 34; `brand` or see-through `onBrand` for the Login header), `InfoBanner` (`info` green box, `warning` gold box with shield, `note` plain grey; bold words with `<Strong>`), `SummaryCard` + `SummaryRow` + `SummaryDivider` (Confirm sending, Receipt; `money` values in Sora; solid or dashed divider), `SectionHeader` (12 px uppercase heading on every screen; flush with the card edge everywhere, as on History).
+
 **Every screen is wrapped in `<Screen>`** (`src/components/Screen.tsx`): it applies the safe-area insets, so content starts below the status bar and above the navigation bar, and scrolled content never slides under the status bar. Use `edges={['top']}` on tab screens (the tab bar handles the bottom). Never add status-bar padding by hand.
 
 **Pressed states never fade cards, circles or rows** (no `opacity` on them): change a background instead, so their colours and labels always stay at full strength. Buttons may dim slightly while pressed.

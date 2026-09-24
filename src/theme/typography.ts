@@ -62,8 +62,18 @@ export const type = {
   // Group heading: "TODAY", "PREFERENCES"
   overline: { fontFamily: fonts.bodyExtraBold, fontSize: 12, lineHeight: 16, letterSpacing: 0.96, textTransform: 'uppercase' },
   button: { fontFamily: fonts.bodyBold, fontSize: 16, lineHeight: 20 },
+  // Text in an InfoBanner: bold in the boxed styles, regular in the plain note
+  banner: { fontFamily: fonts.bodySemiBold, fontSize: 14, lineHeight: 21 },
+  note: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
+  // Chip text: "Active wallet" (small) and "Completed"; the larger chips use `label`
+  chipSmall: { fontFamily: fonts.bodyExtraBold, fontSize: 12, lineHeight: 16 },
+  chip: { fontFamily: fonts.bodyExtraBold, fontSize: 13, lineHeight: 16 },
+  // Stressed SummaryCard value that is not money (plain values use bodyStrong)
+  valueStrong: { fontFamily: fonts.bodyExtraBold, fontSize: 15, lineHeight: 20 },
   // Amounts in rows
   money: { fontFamily: fonts.heading, fontSize: 15, lineHeight: 20 },
+  // Stressed amount in a SummaryCard row: Total, New balance
+  moneyStrong: { fontFamily: fonts.headingBold, fontSize: 15, lineHeight: 20 },
   // PIN box digit and keypad key
   digit: { fontFamily: fonts.headingBold, fontSize: 28, lineHeight: 34 },
   key: { fontFamily: fonts.heading, fontSize: 24, lineHeight: 30 },
