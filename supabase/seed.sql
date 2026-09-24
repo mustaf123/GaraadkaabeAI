@@ -1,0 +1,3 @@
+-- Local seed data only (runs on `supabase db reset`, never on the hosted project).
+-- Intentionally empty: required data such as the System Treasury wallet lives in migrations.
+-- Demo users will be added after auth-register exists (build step 3).

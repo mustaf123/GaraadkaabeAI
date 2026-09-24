@@ -1,6 +1,8 @@
 # SPEC.md — GaraadKaabeAI: System Requirements and Design
 
-**Version:** 2.0 (23 Sep 2026). **Stack:** React Native + Expo, Supabase.
+**Version:** 2.1 (23 Sep 2026). **Stack:** React Native + Expo, Supabase.
+
+*2.1 changes:* secrets moved to a server-only `user_credentials` table; `recovery_locked_until` added; a deleted account's number can register again; the app has no access to `devices`, `app_sessions`, `audit_logs`.
 
 This file holds the **rules**: what the app must do and how it must behave. The **look** of each screen is in `design/screens/` and `design/screenshots/`. For how to build it, see `CLAUDE.md`.
 
@@ -119,7 +121,7 @@ Somali mobile-money apps are widely used, but their users report slow responses,
 | ID | Area | Requirement |
 |---|---|---|
 | NFR-01 | Correctness | Money is never created or lost: the sum of all ledger entries is always 0. |
-| NFR-02 | Security | PIN, recovery code and device secrets are stored only as **bcrypt hashes** on the server. The PIN is never stored on the phone. |
+| NFR-02 | Security | PIN, recovery code and device secrets are stored only as **bcrypt hashes** on the server, in tables the app can never read (`user_credentials`, `devices`). The PIN is never stored on the phone. |
 | NFR-03 | Security | HTTPS only. The Supabase `service_role` key never ships in the app. |
 | NFR-04 | Security | Row Level Security on every table. Clients can never write to money tables directly. |
 | NFR-05 | Performance | A send completes in under 3 seconds on 3G. |
@@ -228,7 +230,7 @@ The user enters phone + recovery code + new PIN twice. The server compares the r
 | Logout tapped | `auth-logout` | Session revoked |
 
 ### 6.8 Delete account
-Profile → Delete this account → confirmation sheet. If the balance is greater than 0, the button is disabled and the sheet says to send the money out first. If the balance is 0, `account-delete` sets the status to `deleted`, revokes devices and sessions, and signs out.
+Profile → Delete this account → confirmation sheet. If the balance is greater than 0, the button is disabled and the sheet says to send the money out first. If the balance is 0, `account-delete` sets the status to `deleted` and the phone to NULL (the row is kept for audit), revokes devices and sessions, removes the Supabase auth user, and signs out. Because the phone is cleared, **the same number can register again** as a new account with a new wallet.
 
 ---
 
@@ -270,19 +272,22 @@ Profile → Delete this account → confirmation sheet. If the balance is greate
 
 | Table | Columns | Rules |
 |---|---|---|
-| `app_users` | id, auth_user_id, phone, pin_hash, recovery_hash, status, failed_pin_count, lockout_count, locked_until, recovery_failed_count, language, notifications_on, created_at | phone UNIQUE; status ∈ active / locked / frozen / deleted |
-| `devices` | id, user_id, device_secret_hash, biometric_secret_hash, push_token, name, is_active, bound_at | one active device per user (partial unique index); push_token = Expo push token (the phone's delivery address) |
+| `app_users` | id, auth_user_id, phone, status, language, notifications_on, created_at | phone UNIQUE, 9 digits, NULL only when deleted; auth_user_id NULL only when deleted; status ∈ active / locked / frozen / deleted; language ∈ en / so |
+| `user_credentials` | user_id, pin_hash, recovery_hash, failed_pin_count, lockout_count, locked_until, recovery_failed_count, recovery_locked_until, updated_at | **server-only**; one row per user |
+| `devices` | id, user_id, device_secret_hash, biometric_secret_hash, push_token, name, is_active, bound_at | **server-only**; one active device per user (partial unique index); push_token = Expo push token (the phone's delivery address) |
 | `wallets` | id, user_id, type, balance, currency | type ∈ user / system; `type='system' OR balance >= 0` |
 | `transactions` | id, reference, type, sender_wallet_id, receiver_wallet_id, amount, status, idempotency_key, created_at | reference UNIQUE; idempotency_key UNIQUE; amount > 0; sender ≠ receiver |
 | `ledger_entries` | id, transaction_id, wallet_id, amount, created_at | insert-only; index (wallet_id, created_at) |
 | `notifications` | id, user_id, kind, title, body, read_at, created_at | kind ∈ sent / received / security / welcome |
-| `app_sessions` | id, user_id, device_id, last_seen, revoked | 60 s idle rule |
-| `audit_logs` | id, user_id, device_id, action, details (jsonb), created_at | insert-only |
+| `app_sessions` | id, user_id, device_id, last_seen, revoked | **server-only**; 60 s idle rule |
+| `audit_logs` | id, user_id, device_id, action, details (jsonb), created_at | **server-only**; insert-only |
 
 **RLS summary**
-- **Read:** users read only their own rows.
-- **Update:** users update only `notifications.read_at` and their own preferences.
-- **Money tables:** no INSERT, UPDATE or DELETE from clients on `wallets`, `transactions` or `ledger_entries`.
+- **Read:** users read only their own rows in `app_users`, `wallets`, `transactions`, `ledger_entries` and `notifications`. A deleted account sees nothing.
+- **Server-only:** the app has no access to `user_credentials`, `devices`, `app_sessions` or `audit_logs`; only Edge Functions use them.
+- **Update:** users update only `notifications.read_at` and their own preferences (`language`, `notifications_on`), enforced per column.
+- **No client inserts or deletes** anywhere, and no writes at all to `wallets`, `transactions` or `ledger_entries`.
+- `ledger_entries` and `audit_logs` reject UPDATE, DELETE and TRUNCATE for every role, including the server.
 
 ---
 
@@ -382,7 +387,7 @@ Have a native speaker review the Somali text before release.
 | TC-31 | NFR-08 | Inspect network traffic during fingerprint login | No fingerprint data sent |
 | TC-32 | FR-29 | Tap an unread alert; tap Mark all read | Item read; badge clears |
 | TC-33 | FR-35 | Delete account with balance > 0 | Button disabled (E14) |
-| TC-34 | FR-35 | Delete account with balance 0 | Account deleted; signed out; number cannot log in |
+| TC-34 | FR-35 | Delete account with balance 0 | Account deleted; signed out; the old PIN no longer logs in; the number can register again as a new account |
 | TC-35 | FR-32 | Change PIN with the wrong current PIN | Rejected, counts toward lockout |
 | TC-36 | NFR-01 | After all tests: `SUM(ledger_entries.amount)` | 0; every balance = sum of its ledger lines |
 | TC-37 | FR-27 | Send money to a user whose Notifications is ON (real phone, app closed) | Push appears on the receiver's lock screen |
@@ -395,8 +400,8 @@ Have a native speaker review the Somali text before release.
 
 | Week | Work | Done when |
 |---|---|---|
-| 1 | Supabase schema, RLS, seed (System Treasury) | Migrations run; TC-18, TC-19 pass |
-| 2 | `transfer_money`, `lookup_receiver`, DB tests | TC-12 to TC-17 and TC-36 pass |
+| 1 | Supabase schema, RLS, System Treasury (migration) | Migrations pushed; `npm run test:db` passes (TC-18, TC-19) |
+| 2 | `transfer_money`, `lookup_receiver`, DB tests, TC-17 concurrency script (Node, two connections) | TC-12 to TC-17 and TC-36 pass |
 | 3 | Auth Edge Functions (register, login, lockout, new device, reset, change PIN) | TC-03 to TC-09, TC-25, TC-26, TC-35 pass |
 | 4 | Expo setup: theme, fonts, shared components, onboarding, registration screens | Onboarding → Home works on a phone |
 | 5 | Login (PIN + fingerprint), Home, tab bar, auto-logout | TC-02, TC-20 to TC-23, TC-27 to TC-30 pass |

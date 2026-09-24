@@ -1,6 +1,8 @@
+@AGENTS.md
+
 # CLAUDE.md — GaraadKaabeAI (mobile wallet)
 
-Read this file fully before doing any work in this repository.
+Read this file fully before doing any work in this repository. `AGENTS.md` (imported above) holds the Expo rules: check the versioned Expo docs, and install packages with `npx expo install`.
 
 ## 1. What we are building
 
@@ -23,9 +25,15 @@ GaraadKaabeAI is a mobile wallet in the style of WAAFI / MyCash. It is a **portf
 | Animation | `react-native-reanimated` |
 | Fingerprint | `expo-local-authentication` + `expo-secure-store` with `requireAuthentication` |
 | Push | `expo-notifications` |
-| Icons | `lucide-react-native` (stroke icons, never emoji) |
+| Icons | `lucide-react-native` + its peer `react-native-svg` (stroke icons, never emoji) |
+| Device secret | `expo-crypto` (random 32-byte secret) |
+| Copy buttons | `expo-clipboard` (wallet number, recovery code) |
+| Privacy (NFR-07) | `expo-screen-capture` (block screenshots on PIN screens) |
+| Supabase CLI | `supabase` dev dependency, run as `npx supabase …` against the **hosted** dev project (no Docker) |
 
-`design/SPEC.md` (version 2.0) uses this same stack. If any older document mentions Flutter, Laravel or MySQL, ignore that part. Where documents conflict, this file wins.
+Install each package with `npx expo install <package>` when the build step that needs it starts, not before.
+
+`design/SPEC.md` (version 2.1) uses this same stack. If any older document mentions Flutter, Laravel or MySQL, ignore that part. Where documents conflict, this file wins.
 
 ## 3. Where the design lives
 
@@ -68,22 +76,22 @@ Colours, fonts and components are defined in Sections 4 and 5 below. There is no
 
 | # | Screen | Route | Mockup |
 |---|---|---|---|
-| — | Onboarding 1–3 (animated first slide) | `app/(onboarding)/index.tsx` (pager) | `Main`, `Welcome2`, `Welcome3` |
-| 1 | Enter phone number | `app/(auth)/phone.tsx` | `Phone` |
-| 2 | Create PIN | `app/(auth)/create-pin.tsx` | `CreatePin` |
-| 3 | Confirm PIN | `app/(auth)/confirm-pin.tsx` | `ConfirmPin` |
-| 4 | Recovery code (shown once) | `app/(auth)/recovery-code.tsx` | `RecoveryCode` |
-| 5 | Enable fingerprint (optional) | `app/(auth)/enable-fingerprint.tsx` | `EnableFingerprint` |
-| 6 | Login: PIN **or** fingerprint | `app/(auth)/login.tsx` | `Login` |
-| 7 | Home (tab) | `app/(tabs)/home.tsx` | `Home` |
-| 8 | Send money | `app/send/index.tsx` | `SendMoney` |
-| 9 | Confirm sending | `app/send/confirm.tsx` | `ConfirmSend` |
-| 9b | Sending animation → success | `app/send/sending.tsx` | `Sending` |
-| 10 | Receipt | `app/receipt/[id].tsx` | `Receipt` |
-| 11 | History (tab) | `app/(tabs)/history.tsx` | `History` |
-| 12 | Forgot PIN | `app/(auth)/forgot-pin.tsx` | `ForgotPin` |
-| 13 | Profile (tab, scrollable) | `app/(tabs)/profile.tsx` | `Profile` |
-| 14 | Alerts / Notifications (tab) | `app/(tabs)/alerts.tsx` | `Notifications` |
+| — | Onboarding 1–3 (animated first slide) | `src/app/(onboarding)/index.tsx` (pager) | `Main`, `Welcome2`, `Welcome3` |
+| 1 | Enter phone number | `src/app/(auth)/phone.tsx` | `Phone` |
+| 2 | Create PIN | `src/app/(auth)/create-pin.tsx` | `CreatePin` |
+| 3 | Confirm PIN | `src/app/(auth)/confirm-pin.tsx` | `ConfirmPin` |
+| 4 | Recovery code (shown once) | `src/app/(auth)/recovery-code.tsx` | `RecoveryCode` |
+| 5 | Enable fingerprint (optional) | `src/app/(auth)/enable-fingerprint.tsx` | `EnableFingerprint` |
+| 6 | Login: PIN **or** fingerprint | `src/app/(auth)/login.tsx` | `Login` |
+| 7 | Home (tab) | `src/app/(tabs)/home.tsx` | `Home` |
+| 8 | Send money | `src/app/send/index.tsx` | `SendMoney` |
+| 9 | Confirm sending | `src/app/send/confirm.tsx` | `ConfirmSend` |
+| 9b | Sending animation → success | `src/app/send/sending.tsx` | `Sending` |
+| 10 | Receipt | `src/app/receipt/[id].tsx` | `Receipt` |
+| 11 | History (tab) | `src/app/(tabs)/history.tsx` | `History` |
+| 12 | Forgot PIN | `src/app/(auth)/forgot-pin.tsx` | `ForgotPin` |
+| 13 | Profile (tab, scrollable) | `src/app/(tabs)/profile.tsx` | `Profile` |
+| 14 | Alerts / Notifications (tab) | `src/app/(tabs)/alerts.tsx` | `Notifications` |
 
 - **Tab bar** (Home · History · Alerts · Profile): same background as the page, no top border, active tab in `brand`, unread badge on Alerts.
 - **Icons:** send = paper plane, receive = arrow into tray. Never use diagonal ↗/↙ arrows, which look like call-log icons.
@@ -133,34 +141,44 @@ Colours, fonts and components are defined in Sections 4 and 5 below. There is no
 - Language: English / Soomaali
 - Notifications on/off
 - Log out
-- **Delete this account**: allowed only when the balance is $0.00. Otherwise the button is disabled and the sheet explains why.
+- **Delete this account**: allowed only when the balance is $0.00. Otherwise the button is disabled and the sheet explains why. Deleting keeps the row for audit but sets `phone` to NULL, so **the number can register again** as a new account.
 
 ## 7. Supabase backend
 
 ### 7.1 Tables (`supabase/migrations/`)
 
-- `app_users`: id, auth_user_id (→ `auth.users`), phone UNIQUE, pin_hash, recovery_hash, status (`active|locked|frozen|deleted`), failed_pin_count, lockout_count, locked_until, recovery_failed_count, language, notifications_on, created_at
-- `devices`: id, user_id, device_secret_hash, biometric_secret_hash (nullable), **push_token** (nullable, Expo push token), name, is_active, bound_at. At most **one active device per user** (partial unique index).
-- `wallets`: id, user_id (null for system), type (`user|system`), balance `numeric(12,2)`, currency `USD`. CHECK: `type='system' OR balance >= 0`.
-- `transactions`: id, reference UNIQUE (`TX-YYYYMMDD-000145`), type (`transfer|welcome_bonus`), sender_wallet_id, receiver_wallet_id, amount `numeric(12,2)` CHECK > 0, status, idempotency_key `uuid` UNIQUE, created_at. CHECK sender ≠ receiver.
-- `ledger_entries`: id, transaction_id, wallet_id, amount (±), created_at. **Insert-only**: no UPDATE or DELETE, ever.
+Migrations already pushed to the hosted project are **never edited**. Every change is a new file from `npx supabase migration new <name>`.
+
+- `app_users`: id, auth_user_id (→ `auth.users`, NULL only after deletion), phone UNIQUE (9 digits; **NULL only when deleted**), status (`active|locked|frozen|deleted`), language (`en|so`), notifications_on, created_at. **No secrets here**: the app can read this row.
+- `user_credentials`: user_id (PK → app_users), pin_hash, recovery_hash, failed_pin_count, lockout_count, locked_until, recovery_failed_count, **recovery_locked_until** (the 24 h recovery lock), updated_at. **Server-only**: a 4-digit PIN hash can be cracked offline, which would skip the lockout, so the app must never read it.
+- `devices`: id, user_id, device_secret_hash, biometric_secret_hash (nullable), **push_token** (nullable, Expo push token), name, is_active, bound_at. At most **one active device per user** (partial unique index). **Server-only.**
+- `wallets`: id, user_id (null for system), type (`user|system`), balance `numeric(12,2)`, currency `USD`. CHECK: `type='system' OR balance >= 0`. One wallet per user; exactly one System Treasury wallet (created by a migration, not the seed).
+- `transactions`: id, reference UNIQUE (`TX-YYYYMMDD-000145`, filled by a column default from a sequence, date in Somalia time), type (`transfer|welcome_bonus`), sender_wallet_id, receiver_wallet_id, amount `numeric(12,2)` CHECK > 0, status (`completed`), idempotency_key `uuid` UNIQUE, created_at. CHECK sender ≠ receiver.
+- `ledger_entries`: id, transaction_id, wallet_id, amount (±, never 0), created_at. **Insert-only**: triggers reject UPDATE, DELETE and TRUNCATE for every role, including `service_role`.
 - `notifications`: id, user_id, kind (`sent|received|security|welcome`), title, body, read_at, created_at
-- `app_sessions`: id, user_id, device_id, last_seen, revoked. Used for the server-side 60-second idle rule.
-- `audit_logs`: id, user_id, device_id, action, details `jsonb`, created_at. Insert-only.
+- `app_sessions`: id, user_id, device_id, last_seen, revoked. Used for the server-side 60-second idle rule. **Server-only.**
+- `audit_logs`: id, user_id (nullable, e.g. login with an unknown number), device_id, action, details `jsonb`, created_at. Insert-only (same triggers). **Server-only.**
+
+Helpers used by policies live in the `private` schema (not reachable through the Data API): `private.current_app_user_id()` and `private.current_wallet_id()`. They return NULL for a deleted account.
 
 ### 7.2 Security (RLS)
 
 - Enable RLS on **every** table.
-- Clients may **SELECT** only their own rows (own user, wallet, transactions they are part of, ledger lines of their wallet, notifications). They may **UPDATE** only `notifications.read_at` and their own preferences.
-- Clients may **never** INSERT, UPDATE or DELETE `wallets`, `transactions` or `ledger_entries`. All money changes go through the function below.
+- Clients may **SELECT** only their own rows in: `app_users`, `wallets`, `transactions` (ones they are part of), `ledger_entries` (lines of their wallet), `notifications`. A frozen user can still read; a deleted user sees nothing.
+- Clients have **no access at all** to `user_credentials`, `devices`, `app_sessions`, `audit_logs`. Only Edge Functions (with `service_role`) use them.
+- Clients may **UPDATE** only `app_users.language`, `app_users.notifications_on` and `notifications.read_at`, on their own rows. This is enforced with **column grants** (permission per column), because RLS policies only choose rows, not columns.
+- Clients may **never** INSERT or DELETE anything. All money changes go through the function below.
+- `anon` (not logged in) has no table access at all.
+- **Closed by default:** Supabase normally grants new tables and functions to `anon`/`authenticated`. Our migrations revoke that (including default privileges for future objects), so **every new table or function must be granted explicitly** in its migration.
+- Policies use `to authenticated` and `(select …)` around function calls (Supabase's recommended form for speed).
 - Never ship the `service_role` key in the app. It is used only inside Edge Functions.
 
 ### 7.3 Money: `transfer_money(p_receiver_phone text, p_amount numeric, p_idempotency_key uuid)`
 
-A `SECURITY DEFINER` Postgres function with `set search_path = public`. It runs in **one transaction**, in this order:
+A `SECURITY DEFINER` Postgres function with `set search_path = ''` and fully qualified names (`public.wallets`), as Supabase recommends: otherwise a caller could plant a look-alike table that the function would use with its owner's rights. Grant EXECUTE to `authenticated` explicitly (see 7.2). It runs in **one transaction**, in this order:
 
 1. The caller is active and their `app_sessions` row is valid, with `last_seen` within 60 s. Update `last_seen`.
-2. Validate the amount (> 0, 2 decimals). The receiver exists and is active. Not sending to self.
+2. Validate the amount (> 0, at most 2 decimals; check this **before** storing, because a `numeric(12,2)` column silently rounds 10.555 to 10.56). The receiver exists and is active. Not sending to self.
 3. If the idempotency key was already used by this user, **return that earlier receipt** (no second transfer).
 4. `SELECT … FOR UPDATE` both wallets, **ordered by wallet id**, to prevent deadlocks.
 5. Check balance ≥ amount.
@@ -177,7 +195,9 @@ Supabase's built-in phone login needs an SMS code, and its passwords need at lea
 - `auth-register`: validates the phone and PIN rules; bcrypt-hashes the PIN and recovery code; creates the Supabase auth user (internal email such as `<phone>@users.garaadkaabe.invalid` plus a random server-only password, never sent to the phone); creates the user, wallet, device and welcome bonus; returns a session and the recovery code.
 - `auth-login`: checks lockout, device secret and PIN hash; handles the new-device flow; opens an `app_sessions` row; returns a session.
 - `auth-biometric-login`: same, but verifies the biometric-protected device secret instead of the PIN.
-- `auth-reset-pin`, `auth-change-pin`, `auth-logout`, `account-freeze`, `account-delete` (balance must be 0).
+- `auth-reset-pin`, `auth-change-pin`, `auth-logout`, `account-freeze`.
+- `account-delete` (balance must be 0): sets `status = 'deleted'` and `phone = NULL`, deactivates devices, clears push tokens, revokes sessions, then **deletes the Supabase auth user** (`auth_user_id` becomes NULL). Removing the auth user frees its internal email, so the number can register again. The database refuses to remove the auth user of an account that is not deleted.
+- PIN and recovery hashes, fail counters and lock times are read and written in `user_credentials`, never `app_users`.
 
 **Device binding without native modules:**
 - On first run, generate a random 32-byte **device secret** and store it in SecureStore. The server stores only its hash.
@@ -197,14 +217,15 @@ Supabase's built-in phone login needs an SMS code, and its passwords need at lea
 
 ## 8. Tests you must write and keep green
 
-- `supabase/tests/` (pgTAP or SQL scripts):
+- `supabase/tests/*.test.sql`, run with `npm run test:db` (see "How database tests work" below):
   - insufficient balance is rejected
   - sending to self is rejected
   - amounts of 0, negative, or more than 2 decimals are rejected
   - the same idempotency key produces one transfer
-  - **two concurrent $8 sends from a $10 wallet: exactly one succeeds**
   - after all tests, `SUM(ledger_entries.amount) = 0` and every balance equals the sum of its ledger lines
-  - RLS: user A cannot read user B's rows
+  - RLS: user A cannot read user B's rows (TC-19), and the app can't write money tables (TC-18) ✔ step 1
+- `scripts/` (Node):
+  - **TC-17: two concurrent $8 sends from a $10 wallet, exactly one succeeds.** This needs two parallel connections, so it is a small Node script, not a SQL file (build step 2).
 - Edge Functions:
   - weak PIN rejected
   - duplicate phone rejected
@@ -221,31 +242,48 @@ Supabase's built-in phone login needs an SMS code, and its passwords need at lea
 
 The full test-case list (TC-01 … TC-39) is in `design/SPEC.md`.
 
+### How database tests work (no Docker)
+
+`supabase test db` needs Docker, which this project does not use. Instead `npm run test:db` (`scripts/test-db.mjs`) runs every `supabase/tests/*.sql` file in name order with `npx supabase db query --linked -f <file>`, against the hosted dev project, and stops at the first failure.
+
+Rules for every test file:
+- Wrap the whole file in `begin; … rollback;` so no test data stays in the database.
+- Each file is self-contained (each runs as its own request): it creates its helpers in `pg_temp` and its own fixtures.
+- Put every check in a `do $$ … $$` block that does `raise exception 'TC-xx failed: <reason>'` when the check fails. Checks without a SPEC test case use `DB-xx`.
+- End with one line: `select 'TC-xx passed' as result;` (the runner prints it).
+- Helpers: `pg_temp.act_as('owner' | 'anon' | '<auth user id>')`, `expect_error(label, actor, sql, sqlstate)`, `expect_count(label, actor, sql, n)`, `exec_as(actor, sql)`.
+
+Numbers in use: DB-01..09 (schema), TC-18 + DB-10..11 (no client writes), TC-19 + DB-20..23 (RLS isolation).
+
 ## 9. Project layout
 
 ```
-app/                expo-router screens (see Section 5)
+src/app/            expo-router screens (see Section 5)
 src/components/     shared UI components
 src/theme/          tokens.ts, typography.ts
 src/lib/            supabase.ts (client), api.ts (calls Edge Functions and RPC), format.ts
 src/stores/         session.ts (in-memory token, user, lock state)
 src/hooks/          useIdleLogout.ts, useAppStateLogout.ts, useRealtimeWallet.ts
-supabase/           migrations/, functions/, tests/, seed.sql
-design/             mockups and specs (read-only for you)
+supabase/           config.toml, migrations/, functions/, tests/, seed.sql (local-only, empty)
+scripts/            test-db.mjs (database test runner), later the TC-17 concurrency script
+design/             mockups and specs (read-only for you, unless I ask you to update SPEC.md)
 ```
 
 ## 10. Commands
 
 ```bash
-npx expo start                     # run the app
-npx expo run:android               # development build (needed for fingerprint)
-supabase start                     # local Supabase
-supabase db reset                  # re-run migrations + seed
-supabase functions serve           # run Edge Functions locally
-supabase test db                   # run database tests
-npm test                           # app unit tests
-npx tsc --noEmit && npm run lint   # type-check and lint before every commit
+npx expo start                          # run the app
+npx expo run:android                    # development build (needed for fingerprint)
+npx supabase migration new <name>       # create a new migration file
+npx supabase db push --linked           # apply new migrations to the hosted dev project
+npx supabase migration list --linked    # which migrations the hosted project has
+npm run test:db                         # database tests (hosted, no Docker; see Section 8)
+npx supabase db advisors --linked       # Supabase security/performance checks
+npx supabase functions deploy <name>    # deploy an Edge Function (step 3)
+npx tsc --noEmit && npm run lint        # type-check and lint before every commit
 ```
+
+The Supabase project is **hosted and dev-only**, and there is no Docker. `supabase start`, `db reset`, `functions serve` and `supabase test db` need Docker and are not used. `npm test` (app unit tests with `jest-expo`) will be added in build step 4.
 
 ## 11. How to work with me
 
