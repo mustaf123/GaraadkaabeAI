@@ -71,6 +71,7 @@ const TEXT_PAIRS: [Key, Key, Key?][] = [
   ['promoBtnText', 'promoBtnPressed'],
   ['warnText', 'warnSoft', 'sheet'],
   ['brandText', 'brandSoft'],
+  ['text', 'brandSoft'], // a quick amount while pressed
 ];
 
 // Icons (non-text, SC 1.4.11): at least 3:1 on their tile.
@@ -80,6 +81,10 @@ const ICON_PAIRS: [Key, Key, Key][] = [
   ['positive', 'positiveSoft', 'surface'],
   ['positive', 'positiveSoft', 'bg'],
   ['brandText', 'brandSoft', 'surface'],
+  // Checkbox: the tick on the ticked box, and the box on the page
+  ['onCheck', 'checkOn', 'bg'],
+  ['checkOn', 'bg', 'bg'],
+  ['checkOn', 'surface', 'surface'],
 ];
 
 describe.each([

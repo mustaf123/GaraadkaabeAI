@@ -27,7 +27,8 @@ export function Screen({ children, scroll = false, edges = ['top', 'bottom'], co
   return (
     <SafeAreaView style={styles.screen} edges={edges}>
       {scroll ? (
-        <ScrollView style={styles.fill} contentContainerStyle={[styles.content, contentStyle]}>
+        // "handled": a tap on a button (e.g. a quick amount) works while the keyboard is open.
+        <ScrollView style={styles.fill} contentContainerStyle={[styles.content, contentStyle]} keyboardShouldPersistTaps="handled">
           {children}
         </ScrollView>
       ) : (

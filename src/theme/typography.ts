@@ -53,6 +53,12 @@ export const type = {
   label: { fontFamily: fonts.bodyBold, fontSize: 14, lineHeight: 18 },
   caption: { fontFamily: fonts.body, fontSize: 13, lineHeight: 18 },
   captionStrong: { fontFamily: fonts.bodySemiBold, fontSize: 13, lineHeight: 18 },
+  // Status under a field: "Registered wallet · 61X XXX 4521"
+  captionBold: { fontFamily: fonts.bodyBold, fontSize: 13, lineHeight: 18 },
+  // Label above a text field: "Phone number"
+  fieldLabel: { fontFamily: fonts.bodySemiBold, fontSize: 14, lineHeight: 18 },
+  // Text typed into a field
+  input: { fontFamily: fonts.bodySemiBold, fontSize: 17, lineHeight: 22 },
   // Group heading: "TODAY", "PREFERENCES"
   overline: { fontFamily: fonts.bodyExtraBold, fontSize: 12, lineHeight: 16, letterSpacing: 0.96, textTransform: 'uppercase' },
   button: { fontFamily: fonts.bodyBold, fontSize: 16, lineHeight: 20 },

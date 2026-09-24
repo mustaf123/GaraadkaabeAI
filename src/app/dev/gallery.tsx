@@ -20,11 +20,15 @@ import {
 import { useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { ActionCircle } from '@/components/ActionCircle';
+import { AmountInput } from '@/components/AmountInput';
 import { BalanceCard } from '@/components/BalanceCard';
 import { BottomSheet } from '@/components/BottomSheet';
+import { Checkbox } from '@/components/Checkbox';
 import { IconButton } from '@/components/IconButton';
 import { Keypad } from '@/components/Keypad';
 import { LogoMark } from '@/components/LogoMark';
+import { OrDivider } from '@/components/OrDivider';
+import { PhoneInput } from '@/components/PhoneInput';
 import { PinBoxes } from '@/components/PinBoxes';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { ReceiveSheet } from '@/components/ReceiveSheet';
@@ -33,12 +37,13 @@ import { SecondaryButton } from '@/components/SecondaryButton';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { StepProgress } from '@/components/StepProgress';
 import { TabBar } from '@/components/TabBar';
+import { TextField } from '@/components/TextField';
 import { TextLink } from '@/components/TextLink';
 import { Toggle } from '@/components/Toggle';
 import { TransactionRow } from '@/components/TransactionRow';
 import { WalletNumberCard } from '@/components/WalletNumberCard';
 import { usePinInput } from '@/hooks/usePinInput';
-import { formatMoney } from '@/lib/format';
+import { formatMoney, maskPhone } from '@/lib/format';
 import { useAppearance, type AppearancePreference } from '@/stores/appearance';
 import { createStyles, useTheme } from '@/theme/theme';
 import type { ThemeColors } from '@/theme/tokens';
@@ -71,7 +76,7 @@ const TABS = [
 const SWATCHES: (keyof ThemeColors)[] = [
   'bg', 'surface', 'sheet', 'text', 'muted', 'line', 'brand', 'brandText', 'brandSoft', 'accent',
   'positive', 'danger', 'dangerSoft', 'badge', 'cardBg', 'cardText', 'pinEmpty', 'segmentTrack',
-  'toggleOn', 'toggleOff', 'send', 'receive', 'history', 'security',
+  'toggleOn', 'toggleOff', 'checkOn', 'send', 'receive', 'history', 'security',
 ];
 
 export default function GalleryRoute() {
@@ -95,6 +100,14 @@ function Gallery() {
   const [notifications, setNotifications] = useState(false);
   const [tab, setTab] = useState('home');
   const [sheet, setSheet] = useState<'receive' | 'delete' | null>(null);
+  const [phone, setPhone] = useState('615552046');
+  const [receiver, setReceiver] = useState('615554521');
+  const [code, setCode] = useState('K7M2-9QXA');
+  const [newPin, setNewPin] = useState('4829');
+  const [newPin2, setNewPin2] = useState('4829');
+  const [amount, setAmount] = useState('10.00');
+  const [amountError, setAmountError] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const sheets = (
     <>
@@ -215,6 +228,79 @@ function Gallery() {
           <PinBoxes value="4829" label="Full, hidden" />
           <PinBoxes value="4829" label="Full, shown" show />
           <PinBoxes value="4829" label="Error" error="Wrong PIN. 2 attempts left." />
+        </Section>
+
+        <Section title="PhoneInput (try it)" compare="Phone.png, SendMoney.png, ForgotPin.png">
+          <Text style={styles.caption}>Tap a field: the border turns thick green while you type.</Text>
+          <PhoneInput value={phone} onValueChange={setPhone} hint="9 digits, for example 61 234 5678" />
+          <PhoneInput
+            label="Receiver's phone number"
+            value={receiver}
+            onValueChange={setReceiver}
+            success={receiver.length === 9 ? `Registered wallet · ${maskPhone(receiver)}` : null}
+            hint="The receiver's 9-digit number"
+          />
+          <PhoneInput label="Error" value="61555" onValueChange={() => {}} error="Enter a valid 9-digit number" />
+          <PhoneInput label="Empty (placeholder)" value="" onValueChange={() => {}} />
+        </Section>
+
+        <Section title="TextField (try it)" compare="ForgotPin.png">
+          <TextField
+            label="Recovery code"
+            value={code}
+            onChangeText={(t) => setCode(t.toUpperCase())}
+            placeholder="XXXX-XXXX"
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={9}
+          />
+          <View style={styles.row}>
+            <View style={styles.flex}>
+              <TextField
+                label="New PIN"
+                value={newPin}
+                onChangeText={(t) => setNewPin(t.replace(/D/g, ''))}
+                placeholder="4 digits"
+                keyboardType="number-pad"
+                secureTextEntry
+                maxLength={4}
+              />
+            </View>
+            <View style={styles.flex}>
+              <TextField
+                label="Confirm new PIN"
+                value={newPin2}
+                onChangeText={(t) => setNewPin2(t.replace(/D/g, ''))}
+                placeholder="4 digits"
+                keyboardType="number-pad"
+                secureTextEntry
+                maxLength={4}
+              />
+            </View>
+          </View>
+          <TextField label="Error" value="K7M2-0000" error="Wrong recovery code. 2 attempts left" />
+          <TextField label="Hint" value="" placeholder="XXXX-XXXX" hint="8 letters and digits, from when you registered" />
+        </Section>
+
+        <Section title="AmountInput (try it)" compare="SendMoney.png">
+          <AmountInput value={amount} onValueChange={setAmount} error={amountError ? 'Insufficient balance' : null} />
+          <Text style={styles.caption}>
+            Value: &quot;{amount}&quot;. Try 10.555, a second dot or 11 digits: the edit is ignored.
+          </Text>
+          <SecondaryButton title={amountError ? 'Hide error' : 'Show error'} onPress={() => setAmountError((e) => !e)} />
+        </Section>
+
+        <Section title="Checkbox" compare="RecoveryCode.png">
+          <Checkbox value={saved} onValueChange={setSaved} label="I have written down my recovery code" />
+          <PrimaryButton title="Continue" disabled={!saved} onPress={() => {}} />
+          <Checkbox value onValueChange={() => {}} label="Ticked" />
+          <Checkbox value={false} onValueChange={() => {}} label="Disabled" disabled />
+        </Section>
+
+        <Section title="OrDivider" compare="Login.png">
+          <PrimaryButton title="Login" disabled />
+          <OrDivider />
+          <SecondaryButton title="Use your fingerprint" icon={FingerprintPattern} onPress={() => {}} />
         </Section>
 
         <Section title="PrimaryButton + SecondaryButton" compare="CreatePin.png, Login.png, Profile-delete.png">

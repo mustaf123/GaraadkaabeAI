@@ -79,7 +79,8 @@ The full list (disabled buttons, PIN boxes, segmented control, toggle, sheet, wa
 - **Touch targets:** at least 44 × 44.
 - **Font sizes:** screen title 28, balance 40, body 15, captions 13. Text styles are in `src/theme/typography.ts`; each weight is its own font family, so never set `fontWeight`.
 - **Contrast (NFR-11):** `src/theme/tokens.test.ts` checks every text colour against its backgrounds in both themes (at least 4.5:1). When a component puts text on a new background, add that pair to the test.
-- Money always uses **Sora**, is formatted `$1,234.50` (`src/lib/format.ts`), and is stored and computed as integers or `numeric`, **never floats**.
+- Money is formatted `$1,234.50` (`src/lib/format.ts`), and is stored and computed as integers or `numeric`, **never floats**.
+- **Font for money:** an amount that stands alone (balance, transaction rows, summary values, quick-amount buttons, the amount being typed) uses **Sora**. An amount inside a sentence ("Available: $131.50", banner text) stays in the sentence's **Manrope**.
 - Honour "reduce motion": skip animations when the OS setting is on.
 
 ## 5. Screens and routes
@@ -107,6 +108,8 @@ The full list (disabled buttons, PIN boxes, segmented control, toggle, sheet, wa
 - **Icons:** send = paper plane, receive = arrow into tray. Never use diagonal ↗/↙ arrows, which look like call-log icons.
 
 **Shared components** (build these before the screens): `PinBoxes`, `Keypad`, `Screen`, `PrimaryButton`, `SecondaryButton`, `IconButton`, `TextLink`, `StepProgress`, `Badge`, `BalanceCard`, `ActionCircle`, `TransactionRow`, `TabBar`, `BottomSheet`, `Toggle`, `SegmentedControl`, `LogoMark` (G + sparkle; `green` or `white` variant, size prop), `WalletNumberCard` (Home's "Your wallet number" card; Share opens the Receive sheet), `ReceiveSheet` (Home-receive.png; copies the number with `expo-clipboard`).
+
+Form controls (typing filters in `src/lib/input.ts`): `TextField` (label, hint / green ✓ status / error; thick green border while typing), `PhoneInput` (fixed `+252`, shows `61 555 2046`, gives the screen the plain 9 digits), `AmountInput` (Sora amount plus the $5 $10 $20 $50 quick amounts; typing follows the server's amount rule, and amounts are compared in cents), `Checkbox` (drawn by us, the whole row can be tapped), `OrDivider` (Login).
 
 **Every screen is wrapped in `<Screen>`** (`src/components/Screen.tsx`): it applies the safe-area insets, so content starts below the status bar and above the navigation bar, and scrolled content never slides under the status bar. Use `edges={['top']}` on tab screens (the tab bar handles the bottom). Never add status-bar padding by hand.
 

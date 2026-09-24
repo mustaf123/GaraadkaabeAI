@@ -56,6 +56,8 @@ export interface ThemeColors {
   toggleOn: string;
   toggleOff: string;
   knob: string;
+  checkOn: string; // a ticked checkbox
+  onCheck: string; // the tick on it
   badge: string;
   onBadge: string;
   scrim: string;
@@ -142,6 +144,8 @@ export const lightColors: ThemeColors = {
   segmentActive: '#FFFFFF',
   toggleOn: '#0B6B57',
   toggleOff: '#C9D3CE',
+  checkOn: '#0B6B57',
+  onCheck: '#FFFFFF',
   scrim: 'rgba(5,10,8,0.55)',
   shadow: '#10201B',
 
@@ -188,6 +192,8 @@ export const darkColors: ThemeColors = {
   segmentActive: '#33443D',
   toggleOn: '#2FBF8F',
   toggleOff: '#33443D',
+  checkOn: '#4FD1A5',
+  onCheck: '#0E1F19',
   scrim: 'rgba(0,0,0,0.6)',
   shadow: '#000000',
 
@@ -208,6 +214,9 @@ export const radius = {
   walletCard: 22, // the wallet-number card on Home
   button: 16,
   pin: 18,
+  input: 16, // text fields
+  quickAmount: 12, // the $5 $10 $20 $50 buttons
+  check: 6, // checkbox
   sheet: 28, // top corners
   iconButton: 14,
   tile: 12, // 38 px icon tiles in Profile rows
